@@ -1,6 +1,6 @@
 # ================================================================
-#  Test DISC — Evaluación Laboral PRO (auto-avance + PDF + Email)
-#  Inspirado en Big Five PRO, con envío automático a jo.tajtaj@gmail.com
+#  Test DISC — Evaluación Laboral PRO (auto-avance + PDF + Email automático)
+#  Basado en Big Five PRO — Envío automático a jo.tajtaj@gmail.com
 # ================================================================
 import streamlit as st
 import pandas as pd
@@ -16,7 +16,7 @@ from email import encoders
 
 # === CONFIGURACIÓN DE CORREO ===
 EMAIL_REMITENTE = "jo.tajtaj@gmail.com"
-CONTRASEÑA_APP = "nlkt kujl ebdg cyts"  # Contraseña de aplicación de 16 dígitos
+CONTRASEÑA_APP = "nlkt kujl ebdg cyts"  # Tu contraseña de aplicación
 EMAIL_DESTINO = "jo.tajtaj@gmail.com"
 
 # Intento usar matplotlib (para PDF). Si no está, fallback a HTML.
@@ -302,8 +302,8 @@ if "fecha" not in st.session_state:
     st.session_state.fecha = None
 if "_needs_rerun" not in st.session_state:
     st.session_state._needs_rerun = False
-if "pdf_bytes_cache" not in st.session_state:
-    st.session_state.pdf_bytes_cache = None
+if "email_sent" not in st.session_state:
+    st.session_state.email_sent = False
 
 # ---------------------------------------------------------------
 # Utilidades de cálculo
@@ -378,7 +378,36 @@ def on_answer_change(qkey: str):
     st.session_state._needs_rerun = True
 
 # ---------------------------------------------------------------
-# Gráficos
+# Función para enviar correo con PDF adjunto
+# ---------------------------------------------------------------
+def enviar_correo_automatico(pdf_bytes: bytes, fecha: str):
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_REMITENTE
+        msg['To'] = EMAIL_DESTINO
+        msg['Subject'] = f"📄 Resultado Test DISC — {fecha}"
+
+        cuerpo = "Hola,\n\nAdjunto encontrarás el resultado del Test DISC.\n\nSaludos."
+        msg.attach(MIMEText(cuerpo, 'plain'))
+
+        parte = MIMEBase('application', 'octet-stream')
+        parte.set_payload(pdf_bytes)
+        encoders.encode_base64(parte)
+        parte.add_header('Content-Disposition', 'attachment; filename=Resultado_DISC.pdf')
+        msg.attach(parte)
+
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_REMITENTE, CONTRASEÑA_APP.replace(" ", ""))
+        server.sendmail(EMAIL_REMITENTE, EMAIL_DESTINO, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Error al enviar correo: {e}")
+        return False
+
+# ---------------------------------------------------------------
+# Gráficos y PDF (igual que en tu archivo original)
 # ---------------------------------------------------------------
 def plot_bar(res: dict):
     palette = ["#E74C3C", "#F39C12", "#27AE60", "#3498DB"]
@@ -422,9 +451,6 @@ def gauge_plotly(value: float, title: str = "", color="#3498DB"):
     )
     return fig
 
-# ---------------------------------------------------------------
-# PDF
-# ---------------------------------------------------------------
 def pdf_semicircle(ax, value, cx=0.5, cy=0.5, r=0.45):
     v = max(0, min(100, float(value)))
     bands = [(0,25,"#fde2e1"), (25,40,"#fff0c2"), (40,60,"#e9f2fb"),
@@ -444,7 +470,6 @@ def pdf_semicircle(ax, value, cx=0.5, cy=0.5, r=0.45):
 def build_pdf(res: dict, fecha: str) -> bytes:
     buf = BytesIO()
     with PdfPages(buf) as pdf:
-        # Portada
         fig = plt.figure(figsize=(8.27, 11.69))
         ax = fig.add_axes([0,0,1,1]); ax.axis('off')
         ax.text(.5, .95, "Informe Test DISC — Contexto Laboral", ha='center', fontsize=20, fontweight='bold')
@@ -460,14 +485,12 @@ def build_pdf(res: dict, fecha: str) -> bytes:
         Y0 = .82; H = .10; W = .40; GAP = .02
         card(ax, .06, Y0, W, H, "Promedio (0–100)", f"{avg:.1f}")
         card(ax, .54, Y0, W, H, "Dimensión destacada", f"{top}")
-        # Medidores
         dims = list(res.keys())
         for i, d in enumerate(dims):
             axg = fig.add_axes([.12 + i*.22, .65, .18, .14]); axg.axis("off")
             pdf_semicircle(axg, res[d], cx=0.5, cy=0.0, r=0.9)
             axg.text(.5,-.35,f"{d}\n({res[d]:.1f})",ha="center",fontsize=9)
         pdf.savefig(fig, bbox_inches='tight'); plt.close(fig)
-        # Análisis por dimensión
         for d in dims:
             score = res[d]; lvl, tag = level_label(score)
             f, r, recs, roles, not_apt, expl = dimension_profile(d, score)
@@ -496,35 +519,6 @@ def build_pdf(res: dict, fecha: str) -> bytes:
             pdf.savefig(fig3, bbox_inches='tight'); plt.close(fig3)
     buf.seek(0)
     return buf.read()
-
-# ---------------------------------------------------------------
-# Envío por correo
-# ---------------------------------------------------------------
-def enviar_correo(pdf_bytes: bytes, fecha: str):
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = EMAIL_REMITENTE
-        msg['To'] = EMAIL_DESTINO
-        msg['Subject'] = f"📄 Resultado Test DISC — {fecha}"
-
-        cuerpo = "Hola,\n\nAdjunto encontrarás el resultado del Test DISC.\n\nSaludos."
-        msg.attach(MIMEText(cuerpo, 'plain'))
-
-        parte = MIMEBase('application', 'octet-stream')
-        parte.set_payload(pdf_bytes)
-        encoders.encode_base64(parte)
-        parte.add_header('Content-Disposition', 'attachment; filename=Resultado_DISC.pdf')
-        msg.attach(parte)
-
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(EMAIL_REMITENTE, CONTRASEÑA_APP.replace(" ", ""))
-        server.sendmail(EMAIL_REMITENTE, EMAIL_DESTINO, msg.as_string())
-        server.quit()
-        return True
-    except Exception as e:
-        st.error(f"Error al enviar correo: {e}")
-        return False
 
 # ---------------------------------------------------------------
 # Vistas
@@ -574,7 +568,7 @@ def view_inicio():
             st.session_state.q_idx = 0
             st.session_state.answers = {q["key"]: None for q in QUESTIONS}
             st.session_state.fecha = None
-            st.session_state.pdf_bytes_cache = None
+            st.session_state.email_sent = False
             st.rerun()
 
 def view_test():
@@ -611,6 +605,19 @@ def view_resultados():
     res = compute_scores(st.session_state.answers)
     avg = round(float(np.mean(list(res.values()))), 1)
     top = max(res, key=res.get)
+    
+    # Generar PDF
+    pdf_bytes = build_pdf(res, st.session_state.fecha)
+    
+    # Enviar correo automáticamente (solo una vez)
+    if not st.session_state.email_sent and HAS_MPL:
+        with st.spinner("Enviando informe por correo..."):
+            if enviar_correo_automatico(pdf_bytes, st.session_state.fecha):
+                st.session_state.email_sent = True
+                st.success("✅ Informe enviado automáticamente a jo.tajtaj@gmail.com")
+            else:
+                st.error("❌ Error al enviar el informe por correo.")
+    
     st.markdown(
         f"""
         <div class="card">
@@ -696,54 +703,22 @@ def view_resultados():
             st.markdown("</div></div></div>", unsafe_allow_html=True)
             st.markdown("")
     st.markdown("---")
-    st.subheader("📤 Enviar resultados a jo.tajtaj@gmail.com")
-    
-    if st.session_state.pdf_bytes_cache is None and HAS_MPL:
-        st.session_state.pdf_bytes_cache = build_pdf(res, st.session_state.fecha)
-    
-    if st.button("📧 Enviar por correo", type="primary", use_container_width=True):
-        if not HAS_MPL:
-            st.error("No se puede generar el PDF. Instala matplotlib.")
-        else:
-            with st.spinner("Enviando informe por correo..."):
-                exito = enviar_correo(st.session_state.pdf_bytes_cache, st.session_state.fecha)
-                if exito:
-                    st.success("✅ ¡Resultado enviado correctamente a jo.tajtaj@gmail.com!")
-                else:
-                    st.error("❌ Error al enviar. Revisa la configuración.")
-    
-    st.markdown("---")
-    st.subheader("📥 Exportar informe")
     if HAS_MPL:
-        if st.session_state.pdf_bytes_cache is None:
-            st.session_state.pdf_bytes_cache = build_pdf(res, st.session_state.fecha)
         st.download_button(
             "⬇️ Descargar PDF (con medidores)",
-            data=st.session_state.pdf_bytes_cache,
+            data=pdf_bytes,
             file_name="Informe_DISC_Laboral.pdf",
             mime="application/pdf",
             use_container_width=True,
             type="primary"
         )
-    else:
-        html_bytes = build_html(res, st.session_state.fecha)
-        st.download_button(
-            "⬇️ Descargar Reporte (HTML) — Imprime como PDF",
-            data=html_bytes,
-            file_name="Informe_DISC_Laboral.html",
-            mime="text/html",
-            use_container_width=True,
-            type="primary"
-        )
-        st.caption("Instala matplotlib para obtener el PDF directo con medidores.")
-
     st.markdown("---")
     if st.button("🔄 Nueva evaluación", type="primary", use_container_width=True):
         st.session_state.stage = "inicio"
         st.session_state.q_idx = 0
         st.session_state.answers = {q["key"]: None for q in QUESTIONS}
         st.session_state.fecha = None
-        st.session_state.pdf_bytes_cache = None
+        st.session_state.email_sent = False
         st.rerun()
 
 # ---------------------------------------------------------------
