@@ -1,462 +1,503 @@
-import streamlit as st
-import uuid
-from dataclasses import dataclass, field
-from typing import Dict, List
+import React, { useState } from 'react';
+import { ChevronLeft, ChevronRight, CheckCircle, User, Target, Award } from 'lucide-react';
 
+const DISCTest = () => {
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [answers, setAnswers] = useState(Array(28).fill(null));
+  const [showResults, setShowResults] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
 
-# =========================================================
-# 1. MODELO DE DATOS
-# =========================================================
+  const questions = [
+    "En situaciones sociales, tiendo a:",
+    "Cuando enfrento un desafío, mi enfoque es:",
+    "Mi estilo de comunicación preferido es:",
+    "En un equipo de trabajo, suelo:",
+    "Cuando tomo decisiones, me baso principalmente en:",
+    "Mi ritmo de trabajo ideal es:",
+    "Ante la presión, mi reacción típica es:",
+    "Mis prioridades en el trabajo son:",
+    "En reuniones, suelo:",
+    "Mi enfoque ante los cambios es:",
+    "Cuando doy feedback, soy:",
+    "Mi motivación principal proviene de:",
+    "En conflictos, tiendo a:",
+    "Mi estilo de liderazgo es:",
+    "Cuando aprendo algo nuevo, prefiero:",
+    "Mis relaciones personales se caracterizan por:",
+    "Ante un plazo ajustado, mi estrategia es:",
+    "Mi enfoque en la resolución de problemas es:",
+    "En mi entorno de trabajo, valoro más:",
+    "Cuando establezco metas, soy:",
+    "Mi reacción ante la crítica es:",
+    "En situaciones de incertidumbre, soy:",
+    "Mi estilo de vestimenta refleja:",
+    "Cuando colaboro con otros, busco:",
+    "Mi enfoque en la planificación es:",
+    "Ante el fracaso, mi actitud es:",
+    "Mis fortalezas principales son:",
+    "Mi legado profesional ideal sería:"
+  ];
 
-@dataclass
-class ItemDISC:
-    traits: List[str]                 # las 4 frases/opciones del bloque
-    map_mas: Dict[int, str]           # índice -> dimensión (+1)
-    map_menos: Dict[int, str]         # índice -> dimensión (-1)
-    dimension_group: str              # "D","I","S","C" o mixto, para ordenar secciones
-    key: str = field(default_factory=lambda: str(uuid.uuid4()))
+  const options = [
+    [
+      { text: "Tomar la iniciativa y dirigir conversaciones", type: "D" },
+      { text: "Ser entusiasta y contagiar energía", type: "I" },
+      { text: "Escuchar atentamente y apoyar a otros", type: "S" },
+      { text: "Analizar cuidadosamente antes de hablar", type: "C" }
+    ],
+    [
+      { text: "Actuar decisivamente para resolverlo rápidamente", type: "D" },
+      { text: "Buscar soluciones creativas e innovadoras", type: "I" },
+      { text: "Colaborar con otros para encontrar la mejor solución", type: "S" },
+      { text: "Analizar todos los datos antes de decidir", type: "C" }
+    ],
+    [
+      { text: "Directa y concisa, voy al grano", type: "D" },
+      { text: "Expresiva y entusiasta, uso gestos", type: "I" },
+      { text: "Amable y considerada, evito confrontaciones", type: "S" },
+      { text: "Precisa y detallada, me aseguro de ser clara", type: "C" }
+    ],
+    [
+      { text: "Liderar y tomar decisiones importantes", type: "D" },
+      { text: "Motivar e inspirar a mis compañeros", type: "I" },
+      { text: "Apoyar y ayudar a mantener la armonía", type: "S" },
+      { text: "Asegurar que todo se haga correctamente", type: "C" }
+    ],
+    [
+      { text: "Resultados y eficiencia", type: "D" },
+      { text: "Intuición y emociones", type: "I" },
+      { text: "Impacto en las personas", type: "S" },
+      { text: "Hechos y análisis lógico", type: "C" }
+    ],
+    [
+      { text: "Rápido y dinámico", type: "D" },
+      { text: "Flexible y adaptable", type: "I" },
+      { text: "Estable y constante", type: "S" },
+      { text: "Metódico y preciso", type: "C" }
+    ],
+    [
+      { text: "Mantenerme firme y enfocado en soluciones", type: "D" },
+      { text: "Expresar mis emociones abiertamente", type: "I" },
+      { text: "Buscar apoyo y consenso", type: "S" },
+      { text: "Retirarme para analizar la situación", type: "C" }
+    ],
+    [
+      { text: "Logros y resultados tangibles", type: "D" },
+      { text: "Reconocimiento y relaciones", type: "I" },
+      { text: "Estabilidad y armonía", type: "S" },
+      { text: "Calidad y precisión", type: "C" }
+    ],
+    [
+      { text: "Dirigir la conversación hacia objetivos claros", type: "D" },
+      { text: "Compartir ideas y generar entusiasmo", type: "I" },
+      { text: "Escuchar y apoyar las opiniones de otros", type: "S" },
+      { text: "Hacer preguntas precisas y analíticas", type: "C" }
+    ],
+    [
+      { text: "Adaptarme rápidamente y aprovechar oportunidades", type: "D" },
+      { text: "Verlo como una aventura emocionante", type: "I" },
+      { text: "Necesitar tiempo para ajustarme cómodamente", type: "S" },
+      { text: "Analizar cuidadosamente los pros y contras", type: "C" }
+    ],
+    [
+      { text: "Directo y honesto, sin rodeos", type: "D" },
+      { text: "Entusiasta y positivo, enfocado en lo bueno", type: "I" },
+      { text: "Diplomático y considerado, evito herir sentimientos", type: "S" },
+      { text: "Detallado y constructivo, con sugerencias específicas", type: "C" }
+    ],
+    [
+      { text: "El desafío y la competencia", type: "D" },
+      { text: "El reconocimiento social y la diversión", type: "I" },
+      { text: "Las relaciones estables y el apoyo mutuo", type: "S" },
+      { text: "La excelencia y el dominio técnico", type: "C" }
+    ],
+    [
+      { text: "Abordarlos directamente para resolverlos", type: "D" },
+      { text: "Expresar mis sentimientos abiertamente", type: "I" },
+      { text: "Buscar compromisos y mantener la paz", type: "S" },
+      { text: "Analizar la situación lógicamente", type: "C" }
+    ],
+    [
+      { text: "Autoritario y orientado a resultados", type: "D" },
+      { text: "Carismático e inspirador", type: "I" },
+      { text: "Servicial y enfocado en el equipo", type: "S" },
+      { text: "Analítico y basado en procesos", type: "C" }
+    ],
+    [
+      { text: "Practicar inmediatamente lo aprendido", type: "D" },
+      { text: "Compartirlo con entusiasmo con otros", type: "I" },
+      { text: "Aplicarlo gradualmente en contextos familiares", type: "S" },
+      { text: "Estudiarlo profundamente antes de aplicarlo", type: "C" }
+    ],
+    [
+      { text: "Independientes y orientadas a objetivos", type: "D" },
+      { text: "Animadas y llenas de energía", type: "I" },
+      { text: "Estables y basadas en confianza", type: "S" },
+      { text: "Profundas y significativas", type: "C" }
+    ],
+    [
+      { text: "Priorizar tareas críticas y actuar rápido", type: "D" },
+      { text: "Buscar ayuda creativa y soluciones alternativas", type: "I" },
+      { text: "Pedir apoyo y trabajar en equipo", type: "S" },
+      { text: "Crear un plan detallado y seguirlo", type: "C" }
+    ],
+    [
+      { text: "Encontrar soluciones prácticas rápidamente", type: "D" },
+      { text: "Generar ideas innovadoras y originales", type: "I" },
+      { text: "Considerar el impacto en todas las personas involucradas", type: "S" },
+      { text: "Analizar sistemáticamente todas las variables", type: "C" }
+    ],
+    [
+      { text: "Resultados medibles y logros", type: "D" },
+      { text: "Creatividad y expresión personal", type: "I" },
+      { text: "Armonía y cooperación", type: "S" },
+      { text: "Precisión y calidad del trabajo", type: "C" }
+    ],
+    [
+      { text: "Ambiciosas y orientadas al éxito", type: "D" },
+      { text: "Inspiradoras y motivadoras", type: "I" },
+      { text: "Realistas y alcanzables", type: "S" },
+      { text: "Detalladas y bien planificadas", type: "C" }
+    ],
+    [
+      { text: "Aceptarla si es constructiva y útil", type: "D" },
+      { text: "Sentirme herido pero tratar de aprender", type: "I" },
+      { text: "Tomármela personalmente y necesitar tiempo", type: "S" },
+      { text: "Analizarla objetivamente para mejorar", type: "C" }
+    ],
+    [
+      { text: "Decidido y proactivo", type: "D" },
+      { text: "Optimista y adaptable", type: "I" },
+      { text: "Cauteloso y necesita seguridad", type: "S" },
+      { text: "Analítico y busca información", type: "C" }
+    ],
+    [
+      { text: "Profesional y poderosa", type: "D" },
+      { text: "Colorida y expresiva", type: "I" },
+      { text: "Cómoda y tradicional", type: "S" },
+      { text: "Elegante y bien coordinada", type: "C" }
+    ],
+    [
+      { text: "Lograr resultados efectivos", type: "D" },
+      { text: "Hacer que sea divertido y estimulante", type: "I" },
+      { text: "Crear un ambiente armonioso", type: "S" },
+      { text: "Asegurar que todo se haga correctamente", type: "C" }
+    ],
+    [
+      { text: "Acción inmediata y flexible", type: "D" },
+      { text: "Ideas generales y visión amplia", type: "I" },
+      { text: "Planificación gradual y estable", type: "S" },
+      { text: "Detalles minuciosos y estructura", type: "C" }
+    ],
+    [
+      { text: "Aprender de él y seguir adelante", type: "D" },
+      { text: "Verlo como una experiencia de aprendizaje", type: "I" },
+      { text: "Sentirme desanimado pero persistente", type: "S" },
+      { text: "Analizar qué salió mal para evitarlo", type: "C" }
+    ],
+    [
+      { text: "Liderazgo y toma de decisiones", type: "D" },
+      { text: "Creatividad e influencia social", type: "I" },
+      { text: "Paciencia y apoyo a otros", type: "S" },
+      { text: "Análisis y atención al detalle", type: "C" }
+    ],
+    [
+      { text: "Haber transformado industrias", type: "D" },
+      { text: "Haber inspirado a muchas personas", type: "I" },
+      { text: "Haber construido relaciones duraderas", type: "S" },
+      { text: "Haber alcanzado la excelencia técnica", type: "C" }
+    ]
+  ];
 
+  const handleAnswer = (optionIndex) => {
+    const newAnswers = [...answers];
+    newAnswers[currentQuestion] = optionIndex;
+    setAnswers(newAnswers);
+  };
 
-# =========================================================
-# 2. BANCO DE ITEMS
-# =========================================================
-# IMPORTANTE:
-# - Debes reemplazar/ajustar las frases y el mapeo según tu PDF real.
-# - dimension_group: te permite agrupar/ordenar las preguntas por bloques de dimensión
-#   para análisis posterior. Ej: todas las de Dominancia primero, luego Influencia, etc.
-#
-# Ejemplo basado en la estructura DISC descrita en tu material:
-# D = Dominancia (directo/a, decidido/a)
-# I = Influencia (entusiasta, sociable)
-# S = Estabilidad (tranquilo/a, paciente)
-# C = Cumplimiento / Perfeccionista (preciso/a, cuidadoso/a, control de calidad) :contentReference[oaicite:1]{index=1}
-#
-# Nota: vamos a generar una lista larga (28 ítems, placeholder). Tú puedes ampliar
-# hasta 100 ítems repitiendo el patrón, o reemplazar con todos tus ítems reales.
-
-BASE_ITEMS = [
-    ItemDISC(
-        traits=[
-            "Entusiasta / Extrovertido(a)",
-            "Rápido(a) / Impulsivo(a)",
-            "Lógico(a) / Cuida los detalles",
-            "Apacible / Tranquilo(a)"
-        ],
-        map_mas={0: "I", 1: "D", 2: "C", 3: "S"},
-        map_menos={0: "S", 1: "C", 2: "I", 3: "D"},
-        dimension_group="I"  # este bloque lo dejamos en grupo I (Influencia) a modo ejemplo
-    ),
-    ItemDISC(
-        traits=[
-            "Decidido(a) / Audaz",
-            "Cauteloso(a) / Analítico(a)",
-            "Receptivo(a) / Encantador(a)",
-            "Bondadoso(a) / Complaciente"
-        ],
-        map_mas={0: "D", 1: "C", 2: "I", 3: "S"},
-        map_menos={0: "S", 1: "I", 2: "C", 3: "D"},
-        dimension_group="D"
-    ),
-    ItemDISC(
-        traits=[
-            "Amigable / Preciso(a)",
-            "Franco(a)",
-            "Tranquilo(a)",
-            "Paciente / Pacificador(a)"
-        ],
-        map_mas={0: "C", 1: "D", 2: "S", 3: "I"},
-        map_menos={0: "D", 1: "S", 2: "I", 3: "C"},
-        dimension_group="C"
-    ),
-    ItemDISC(
-        traits=[
-            "Elocuente",
-            "Controlado(a) / Tolerante",
-            "Decisivo(a)",
-            "Reservado(a) / Resuelto(a)"
-        ],
-        map_mas={0: "I", 1: "S", 2: "D", 3: "C"},
-        map_menos={0: "C", 1: "D", 2: "S", 3: "I"},
-        dimension_group="D"
-    ),
-    ItemDISC(
-        traits=[
-            "Atrevido(a) / Firme",
-            "Concienzudo(a) / Metódico(a)",
-            "Comunicativo(a)",
-            "Moderado(a) / Independiente"
-        ],
-        map_mas={0: "D", 1: "C", 2: "I", 3: "S"},
-        map_menos={0: "S", 1: "I", 2: "C", 3: "D"},
-        dimension_group="C"
-    ),
-    ItemDISC(
-        traits=[
-            "Ameno(a) / Ingenioso(a)",
-            "Investigador(a) / Acepta riesgos",
-            "De trato fácil / Compasivo(a)",
-            "Inquieto(a) / Habla directo"
-        ],
-        map_mas={0: "I", 1: "D", 2: "S", 3: "C"},
-        map_menos={0: "C", 1: "S", 2: "D", 3: "I"},
-        dimension_group="I"
-    ),
-    ItemDISC(
-        traits=[
-            "Expresivo(a)",
-            "Cuidadoso(a) / Obediente",
-            "Dominante / Ideas firmes",
-            "Sensible / Generoso(a)"
-        ],
-        map_mas={0: "I", 1: "C", 2: "D", 3: "S"},
-        map_menos={0: "C", 1: "D", 2: "S", 3: "I"},
-        dimension_group="S"
-    ),
-]
-
-# Para efectos prácticos vamos a construir una lista más larga
-# copiando este set hasta llegar a ~28 items.
-ITEMS_RAW = []
-while len(ITEMS_RAW) < 28:
-    template = BASE_ITEMS[len(ITEMS_RAW) % len(BASE_ITEMS)]
-    # duplicamos con nueva key
-    ITEMS_RAW.append(
-        ItemDISC(
-            traits=template.traits.copy(),
-            map_mas=template.map_mas.copy(),
-            map_menos=template.map_menos.copy(),
-            dimension_group=template.dimension_group,
-        )
-    )
-
-# Ahora ordenamos todas las preguntas por dimension_group,
-# para que primero salgan todas las D, luego I, luego S, luego C (o el orden que tú quieras).
-DIM_ORDER = ["D", "I", "S", "C"]
-ITEMS_SORTED = sorted(
-    ITEMS_RAW,
-    key=lambda it: (DIM_ORDER.index(it.dimension_group), it.key)
-)
-
-
-# =========================================================
-# 3. ESTADO GLOBAL
-# =========================================================
-
-def init_state():
-    if "stage" not in st.session_state:
-        st.session_state.stage = "intro"  # intro -> test -> results
-    if "current_idx" not in st.session_state:
-        st.session_state.current_idx = 0   # índice de pregunta actual
-    if "answers_mas" not in st.session_state:
-        st.session_state.answers_mas = {}  # item_key -> idx opción MÁS
-    if "answers_menos" not in st.session_state:
-        st.session_state.answers_menos = {}  # item_key -> idx opción MENOS
-    if "scores" not in st.session_state:
-        st.session_state.scores = {"D": 0, "I": 0, "S": 0, "C": 0}
-    if "profile" not in st.session_state:
-        st.session_state.profile = {}
-    if "nombre_participante" not in st.session_state:
-        st.session_state.nombre_participante = ""
-
-
-# =========================================================
-# 4. CÁLCULO DISC
-# =========================================================
-
-def compute_scores():
-    scores = {"D": 0, "I": 0, "S": 0, "C": 0}
-    for item in ITEMS_SORTED:
-        # MAS = suma +1 a la dimensión asociada
-        if item.key in st.session_state.answers_mas:
-            idx_mas = st.session_state.answers_mas[item.key]
-            if idx_mas in item.map_mas:
-                dim = item.map_mas[idx_mas]
-                scores[dim] += 1
-        # MENOS = resta 1 a la dimensión asociada
-        if item.key in st.session_state.answers_menos:
-            idx_menos = st.session_state.answers_menos[item.key]
-            if idx_menos in item.map_menos:
-                dim2 = item.map_menos[idx_menos]
-                scores[dim2] -= 1
-    return scores
-
-
-def describe_high_dimension(dim: str) -> str:
-    # Perfil "Perfeccionista" = C alto:
-    # Persona metódica, precisa, orientada a calidad.
-    # Busca estabilidad, normas claras, control de calidad
-    # Puede tardar en decidir porque analiza todo
-    # Valor para la organización: consistencia, rigor, control de errores. :contentReference[oaicite:2]{index=2}
-    if dim == "D":
-        return (
-            "Dominancia: directo/a, decidido/a, orientado/a a resultados, "
-            "empuja a la acción y asume riesgos. Bajo presión puede mostrarse "
-            "impaciente o confrontacional."
-        )
-    if dim == "I":
-        return (
-            "Influencia: comunicativo/a, entusiasta, sociable, genera adhesión "
-            "y motiva a otros. Bajo presión puede priorizar la aceptación social "
-            "por sobre los detalles técnicos."
-        )
-    if dim == "S":
-        return (
-            "Estabilidad: paciente, leal, colaborador/a, busca armonía y "
-            "cohesión del equipo. Bajo presión puede evitar el conflicto "
-            "y resistir cambios bruscos."
-        )
-    if dim == "C":
-        return (
-            "Cumplimiento / Perfeccionista: metódico/a, preciso/a, cuidadoso/a "
-            "con estándares y control de calidad. Prefiere entornos estables, "
-            "normas claras y baja ambigüedad. Puede demorarse al decidir porque "
-            "analiza toda la información y puede parecer crítico/a cuando ve "
-            "errores, pero aporta rigor, seguridad y consistencia. :contentReference[oaicite:3]{index=3}"
-        )
-    return ""
-
-
-def build_profile(scores: Dict[str, int]) -> Dict[str, str]:
-    main_dim = max(scores, key=lambda k: scores[k])
-
-    if main_dim == "C":
-        fortalezas = [
-            "Orientación extrema al detalle y la calidad.",
-            "Respeto por normas y procedimientos.",
-            "Confiable en tareas donde el error es costoso.",
-        ]
-        alertas = [
-            "Puede mostrarse muy crítico/a frente a fallas. :contentReference[oaicite:4]{index=4}",
-            "Puede tardar decisiones por sobreanálisis. :contentReference[oaicite:5]{index=5}",
-            "Tolera mal la ambigüedad o cambios improvisados. :contentReference[oaicite:6]{index=6}",
-        ]
-        meta = (
-            "Busca entornos estables, reglas claras, expectativas bien definidas "
-            "y reconocimiento por la calidad objetiva del trabajo. :contentReference[oaicite:7]{index=7}"
-        )
-    elif main_dim == "D":
-        fortalezas = [
-            "Rapidez para decidir y ejecutar.",
-            "Enfrenta obstáculos con determinación.",
-            "Asume liderazgo en situaciones de presión."
-        ]
-        alertas = [
-            "Puede ser percibido/a como agresivo/a o impaciente.",
-            "Puede minimizar los detalles.",
-            "Puede imponer su ritmo al resto."
-        ]
-        meta = "Necesita desafíos claros, autonomía y poder de decisión."
-    elif main_dim == "I":
-        fortalezas = [
-            "Alta capacidad para motivar y persuadir.",
-            "Sociable, genera redes y entusiasmo.",
-            "Crea climas positivos."
-        ]
-        alertas = [
-            "Puede evitar confrontaciones directas.",
-            "Puede subestimar lo técnico/administrativo.",
-            "Puede depender de aprobación externa."
-        ]
-        meta = "Ambiente dinámico, contacto constante con personas y reconocimiento social."
-    else:  # S
-        fortalezas = [
-            "Estabilidad emocional, paciencia, confiabilidad.",
-            "Lealtad y apoyo consistente al equipo.",
-            "Mantiene procesos en el tiempo."
-        ]
-        alertas = [
-            "Puede evitar conflictos necesarios.",
-            "Puede resistirse a cambios bruscos.",
-            "Puede sobrecargarse tratando de ayudar a todos."
-        ]
-        meta = "Ambientes previsibles, ritmos sostenibles y relaciones de confianza."
-
-    return {
-        "dimension_principal": main_dim,
-        "descripcion": describe_high_dimension(main_dim),
-        "fortalezas": "\n- " + "\n- ".join(fortalezas),
-        "alertas": "\n- " + "\n- ".join(alertas),
-        "lo_que_busca": meta,
+  const nextQuestion = () => {
+    if (currentQuestion < 27) {
+      setCurrentQuestion(currentQuestion + 1);
+    } else {
+      calculateResults();
     }
+  };
 
+  const prevQuestion = () => {
+    if (currentQuestion > 0) {
+      setCurrentQuestion(currentQuestion - 1);
+    }
+  };
 
-# =========================================================
-# 5. VISTAS
-# =========================================================
+  const calculateResults = () => {
+    const scores = { D: 0, I: 0, S: 0, C: 0 };
+    
+    answers.forEach((answer, index) => {
+      if (answer !== null) {
+        const selectedOption = options[index][answer];
+        scores[selectedOption.type]++;
+      }
+    });
 
-def page_intro():
-    st.title("Evaluación de Perfil Conductual (DISC)")
-    st.write(
-        "Esta evaluación mide tu estilo conductual en cuatro dimensiones: "
-        "D (Dominancia), I (Influencia), S (Estabilidad) y C (Cumplimiento / Perfeccionista). "
-        "En cada bloque verás 4 descripciones de comportamiento. Debes elegir cuál te "
-        "representa MÁS y cuál te representa MENOS."
-    )
-    st.write(
-        "El resultado final genera un perfil con fortalezas, riesgos y condiciones de trabajo "
-        "preferidas. Por ejemplo, el perfil 'Perfeccionista' (alto C) describe a alguien "
-        "metódico, preciso, muy orientado al control de calidad, que busca estabilidad y "
-        "normas claras y que puede tardar en decidir porque analiza toda la información. "
-        "Aporta rigor, consistencia y seguridad en los procesos. :contentReference[oaicite:8]{index=8}"
-    )
+    const totalQuestions = answers.filter(a => a !== null).length;
+    const percentages = {
+      D: Math.round((scores.D / totalQuestions) * 100),
+      I: Math.round((scores.I / totalQuestions) * 100),
+      S: Math.round((scores.S / totalQuestions) * 100),
+      C: Math.round((scores.C / totalQuestions) * 100)
+    };
 
-    st.text_input(
-        "Tu nombre (para el informe final):",
-        key="nombre_participante",
-        placeholder="Ej: José Ignacio Taj-Taj",
-    )
+    setShowResults(true);
+    setIsCompleted(true);
+  };
 
-    if st.button("Comenzar ahora"):
-        st.session_state.stage = "test"
-        st.session_state.current_idx = 0
+  const resetTest = () => {
+    setCurrentQuestion(0);
+    setAnswers(Array(28).fill(null));
+    setShowResults(false);
+    setIsCompleted(false);
+  };
 
+  const getProfileDescription = (dominantType) => {
+    switch(dominantType) {
+      case 'D':
+        return "Dominante: Eres directo, decidido y orientado a resultados. Te gusta asumir el control y enfrentar desafíos.";
+      case 'I':
+        return "Influyente: Eres entusiasta, optimista y sociable. Te encanta inspirar a otros y trabajar en equipo.";
+      case 'S':
+        return "Estable: Eres paciente, confiable y cooperativo. Valoras la armonía y las relaciones estables.";
+      case 'C':
+        return "Conforme: Eres analítico, preciso y meticuloso. Te enfocas en la calidad y la exactitud.";
+      default:
+        return "Perfil equilibrado: Tienes características de múltiples estilos, lo que te permite adaptarte a diferentes situaciones.";
+    }
+  };
 
-def page_question():
-    total = len(ITEMS_SORTED)
-    idx = st.session_state.current_idx
-    item = ITEMS_SORTED[idx]
+  const getDominantType = () => {
+    if (!showResults) return null;
+    
+    const scores = { D: 0, I: 0, S: 0, C: 0 };
+    answers.forEach((answer, index) => {
+      if (answer !== null) {
+        const selectedOption = options[index][answer];
+        scores[selectedOption.type]++;
+      }
+    });
 
-    # Info de progreso
-    st.progress((idx + 1) / total)
-    st.write(f"Pregunta {idx + 1} de {total}")
-    st.caption(
-        f"Bloque asociado a la dimensión {item.dimension_group} "
-        f"(esto ayuda a análisis interno por tipo de rasgo)."
-    )
+    return Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b);
+  };
 
-    # Mostramos la pregunta dentro de un form
-    # para capturar la respuesta y auto-avanzar
-    form_key = f"form_{item.key}"
-    with st.form(key=form_key, clear_on_submit=True):
-        st.write(
-            "Selecciona UNA opción como MÁS (la que más se parece a ti) "
-            "y UNA opción como MENOS (la que menos se parece a ti)."
-        )
+  if (showResults) {
+    const dominantType = getDominantType();
+    const scores = { D: 0, I: 0, S: 0, C: 0 };
+    answers.forEach((answer, index) => {
+      if (answer !== null) {
+        const selectedOption = options[index][answer];
+        scores[selectedOption.type]++;
+      }
+    });
 
-        col1, col2 = st.columns(2)
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-2xl shadow-xl p-8">
+            <div className="text-center mb-8">
+              <Award className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Resultados del Test DISC</h1>
+              <p className="text-gray-600">Análisis de tu perfil conductual</p>
+            </div>
 
-        # default preseleccionado si ya respondió antes
-        default_mas = st.session_state.answers_mas.get(item.key, None)
-        default_menos = st.session_state.answers_menos.get(item.key, None)
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">Tu Perfil Dominante</h3>
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold ${
+                    dominantType === 'D' ? 'bg-red-500' :
+                    dominantType === 'I' ? 'bg-yellow-500' :
+                    dominantType === 'S' ? 'bg-green-500' :
+                    'bg-blue-500'
+                  }`}>
+                    {dominantType}
+                  </div>
+                  <span className="text-lg font-medium text-gray-900">
+                    {dominantType === 'D' ? 'Dominante' :
+                     dominantType === 'I' ? 'Influyente' :
+                     dominantType === 'S' ? 'Estable' :
+                     'Conforme'}
+                  </span>
+                </div>
+                <p className="text-gray-700">{getProfileDescription(dominantType)}</p>
+              </div>
 
-        with col1:
-            mas_choice = st.radio(
-                "Más:",
-                options=list(range(len(item.traits))),
-                format_func=lambda i: item.traits[i],
-                index=default_mas if default_mas is not None else 0,
-                key=f"mas_{item.key}",
-            )
-        with col2:
-            menos_choice = st.radio(
-                "Menos:",
-                options=list(range(len(item.traits))),
-                format_func=lambda i: item.traits[i],
-                index=default_menos if default_menos is not None else 1,
-                key=f"menos_{item.key}",
-            )
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-6">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">Puntajes Detallados</h3>
+                <div className="space-y-3">
+                  {Object.entries(scores).map(([type, score]) => (
+                    <div key={type} className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${
+                          type === 'D' ? 'bg-red-500' :
+                          type === 'I' ? 'bg-yellow-500' :
+                          type === 'S' ? 'bg-green-500' :
+                          'bg-blue-500'
+                        }`}>
+                          {type}
+                        </span>
+                        <span className="font-medium">
+                          {type === 'D' ? 'Dominante' :
+                           type === 'I' ? 'Influyente' :
+                           type === 'S' ? 'Estable' :
+                           'Conforme'}
+                        </span>
+                      </div>
+                      <span className="text-lg font-bold text-gray-900">{score}/28</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-        submitted = st.form_submit_button("Siguiente ➜")
+            <div className="bg-gray-50 rounded-xl p-6 mb-8">
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Recomendaciones Profesionales</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-lg border-l-4 border-blue-500">
+                  <h4 className="font-semibold text-gray-900 mb-2">Fortalezas Clave</h4>
+                  <ul className="text-gray-700 space-y-1">
+                    <li>• Alta capacidad de liderazgo y toma de decisiones</li>
+                    <li>• Excelente en entornos competitivos</li>
+                    <li>• Orientado a resultados y metas claras</li>
+                  </ul>
+                </div>
+                <div className="bg-white p-4 rounded-lg border-l-4 border-green-500">
+                  <h4 className="font-semibold text-gray-900 mb-2">Áreas de Desarrollo</h4>
+                  <ul className="text-gray-700 space-y-1">
+                    <li>• Trabajar en la escucha activa</li>
+                    <li>• Considerar más el impacto en las personas</li>
+                    <li>• Practicar la paciencia en procesos lentos</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
 
-    # Después de submit, guardamos y avanzamos automáticamente
-    if submitted:
-        st.session_state.answers_mas[item.key] = mas_choice
-        st.session_state.answers_menos[item.key] = menos_choice
+            <div className="flex justify-center space-x-4">
+              <button
+                onClick={resetTest}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Volver a Realizar el Test
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium"
+              >
+                Imprimir Resultados
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-        if st.session_state.current_idx < total - 1:
-            # pasar a la siguiente pregunta
-            st.session_state.current_idx += 1
-        else:
-            # si ya no quedan preguntas, calcular resultados
-            st.session_state.scores = compute_scores()
-            st.session_state.profile = build_profile(st.session_state.scores)
-            st.session_state.stage = "results"
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6">
+            <div className="flex items-center space-x-3 mb-2">
+              <Target className="w-8 h-8" />
+              <h1 className="text-2xl font-bold">Test DISC Profesional</h1>
+            </div>
+            <p className="text-blue-100">Descubre tu perfil conductual en 28 preguntas</p>
+            <div className="mt-4 flex items-center justify-between">
+              <span className="text-sm text-blue-200">
+                Pregunta {currentQuestion + 1} de 28
+              </span>
+              <div className="w-64 bg-blue-500 rounded-full h-2">
+                <div 
+                  className="bg-white rounded-full h-2 transition-all duration-300"
+                  style={{ width: `${((currentQuestion + 1) / 28) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
 
-        st.rerun()  # rerender inmediato para mostrar la próxima pregunta
+          {/* Question */}
+          <div className="p-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-8 leading-relaxed">
+              {questions[currentQuestion]}
+            </h2>
 
+            <div className="space-y-4">
+              {options[currentQuestion].map((option, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleAnswer(index)}
+                  className={`w-full p-4 text-left rounded-xl border-2 transition-all duration-200 hover:shadow-md ${
+                    answers[currentQuestion] === index
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                  }`}
+                >
+                  <div className="flex items-start space-x-3">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${
+                      answers[currentQuestion] === index
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-400'
+                    }`}>
+                      {answers[currentQuestion] === index && <CheckCircle className="w-4 h-4" />}
+                    </div>
+                    <span className="font-medium">{option.text}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
 
-def page_results():
-    st.title("Resultados del Perfil Conductual")
+            {/* Navigation */}
+            <div className="flex justify-between items-center mt-8 pt-6 border-t border-gray-200">
+              <button
+                onClick={prevQuestion}
+                disabled={currentQuestion === 0}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                  currentQuestion === 0
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Anterior</span>
+              </button>
 
-    nombre = st.session_state.nombre_participante or "Participante"
-    scores = st.session_state.scores
-    profile = st.session_state.profile
+              <div className="text-sm text-gray-500">
+                {currentQuestion + 1} / 28
+              </div>
 
-    st.subheader(f"Informe de {nombre}")
+              <button
+                onClick={nextQuestion}
+                disabled={answers[currentQuestion] === null}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                  answers[currentQuestion] === null
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                <span>
+                  {currentQuestion === 27 ? 'Ver Resultados' : 'Siguiente'}
+                </span>
+                {currentQuestion < 27 && <ChevronRight className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        </div>
 
-    st.markdown(
-        f"**Puntajes netos DISC (Más suma / Menos resta):**\n\n"
-        f"- D (Dominancia): {scores['D']}\n"
-        f"- I (Influencia): {scores['I']}\n"
-        f"- S (Estabilidad): {scores['S']}\n"
-        f"- C (Cumplimiento / Perfeccionista): {scores['C']}\n"
-    )
+        {/* Footer */}
+        <div className="mt-6 text-center text-sm text-gray-500">
+          <p>Test DISC Profesional • Basado en el modelo de William Moulton Marston</p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-    st.subheader("Tu estilo principal")
-    st.markdown(
-        f"Dimensión predominante: **{profile['dimension_principal']}**\n\n"
-        f"{profile['descripcion']}"
-    )
-
-    st.subheader("Fortalezas que aportas")
-    st.markdown(profile["fortalezas"])
-
-    st.subheader("Alertas / Riesgos potenciales")
-    st.markdown(profile["alertas"])
-
-    st.subheader("Condiciones que buscas en tu entorno de trabajo")
-    st.markdown(profile["lo_que_busca"])
-
-    st.info(
-        "Interpretación basada en el modelo DISC y perfiles conductuales descritos, "
-        "incluyendo el perfil 'Perfeccionista' (C alto): persona metódica, precisa, "
-        "que valora normas claras, estabilidad y control de calidad; puede tardar "
-        "en decidir porque analiza toda la información y puede ser percibida como "
-        "crítica frente a errores, pero aporta consistencia y rigor. :contentReference[oaicite:9]{index=9}"
-    )
-
-    # Botón para reiniciar (por si quieres volver a aplicar)
-    if st.button("Volver a aplicar el test"):
-        nombre_keep = st.session_state.nombre_participante
-        st.session_state.clear()
-        init_state()
-        st.session_state.nombre_participante = nombre_keep
-        st.session_state.stage = "test"
-        st.session_state.current_idx = 0
-
-
-# =========================================================
-# 6. MAIN
-# =========================================================
-
-def main():
-    st.set_page_config(
-        page_title="Perfil Conductual DISC",
-        page_icon="🧠",
-        layout="centered"
-    )
-
-    init_state()
-
-    if st.session_state.stage == "intro":
-        page_intro()
-    elif st.session_state.stage == "test":
-        page_question()
-    elif st.session_state.stage == "results":
-        page_results()
-    else:
-        st.session_state.stage = "intro"
-        page_intro()
-
-    st.markdown("---")
-    st.markdown(
-        "<p style='text-align:center; font-size:12px; color:gray;'>"
-        "Sistema de Perfil Conductual estilo DISC. "
-        "Resultados de uso orientativo; no equivalen a diagnóstico clínico. "
-        "© 2025</p>",
-        unsafe_allow_html=True
-    )
-
-
-if __name__ == "__main__":
-    main()
+export default DISCTest;
