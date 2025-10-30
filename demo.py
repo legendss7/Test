@@ -128,6 +128,9 @@ hr{ border:none; border-top:1px solid #eee; margin:16px 0; }
 # ---------------------------------------------------------------
 # Definiciones DISC
 # ---------------------------------------------------------------
+# ---------------------------------------------------------------
+# Definiciones DISC — Versión de elección forzada (28 ítems, 4 frases por ítem)
+# ---------------------------------------------------------------
 DIMENSIONES = {
     "Dominancia": {
         "code": "D", "icon": "💪",
@@ -256,125 +259,100 @@ DIMENSIONES = {
 }
 
 DIM_LIST = list(DIMENSIONES.keys())
-LIKERT = {1: "Dominancia (D)", 2: "Influencia (I)", 3: "Estabilidad (S)", 4: "Cumplimiento (C)"}
-LIK_KEYS = list(LIKERT.keys())
+DIM_CODES = [DIMENSIONES[d]["code"] for d in DIM_LIST]  # ['D', 'I', 'S', 'C']
 
-# 28 preguntas (7 por dimensión, estilo cíclico D-I-S-C)
-PREGUNTAS = [
-    "Soy directo/a y decidido/a.",
-    "Me gusta entusiasmar a otros.",
-    "Soy paciente y constante.",
-    "Soy preciso/a y meticuloso/a.",
-    "Me gusta asumir el control.",
-    "Soy sociable y comunicativo/a.",
-    "Prefiero un ambiente estable y armonioso.",
-    "Me gusta seguir reglas y procedimientos.",
-    "Soy competitivo/a y orientado/a a resultados.",
-    "Soy optimista y expresivo/a.",
-    "Soy un/a buen/a oyente.",
-    "Me preocupo por los detalles y la exactitud.",
-    "Me gusta tomar decisiones rápidas.",
-    "Disfruto trabajando en equipo y motivando.",
-    "Soy cooperativo/a y servicial.",
-    "Soy analítico/a y lógico/a.",
-    "Soy audaz y me gusta asumir riesgos.",
-    "Soy entusiasta y carismático/a.",
-    "Soy leal y confiable.",
-    "Soy perfeccionista y organizado/a.",
-    "Soy firme y me gusta resolver problemas.",
-    "Soy animado/a y creativo/a.",
-    "Soy tranquilo/a y evito conflictos.",
-    "Soy reflexivo/a y me gusta planificar.",
-    "Soy independiente y autosuficiente.",
-    "Soy persuasivo/a y me gusta influir.",
-    "Soy empático/a y comprensivo/a.",
-    "Soy riguroso/a y me gusta la calidad."
+# Frases DISC clásicas (28 grupos de 4)
+DISC_ITEMS = [
+    ("Soy directo/a y decidido/a.", "Me gusta entusiasmar a otros.", "Soy paciente y constante.", "Soy preciso/a y meticuloso/a."),
+    ("Me gusta asumir el control.", "Soy sociable y comunicativo/a.", "Prefiero un ambiente estable y armonioso.", "Me gusta seguir reglas y procedimientos."),
+    ("Soy competitivo/a y orientado/a a resultados.", "Soy optimista y expresivo/a.", "Soy un/a buen/a oyente.", "Me preocupo por los detalles y la exactitud."),
+    ("Me gusta tomar decisiones rápidas.", "Disfruto trabajando en equipo y motivando.", "Soy cooperativo/a y servicial.", "Soy analítico/a y lógico/a."),
+    ("Soy audaz y me gusta asumir riesgos.", "Soy entusiasta y carismático/a.", "Soy leal y confiable.", "Soy perfeccionista y organizado/a."),
+    ("Soy firme y me gusta resolver problemas.", "Soy animado/a y creativo/a.", "Soy tranquilo/a y evito conflictos.", "Soy reflexivo/a y me gusta planificar."),
+    ("Soy independiente y autosuficiente.", "Soy persuasivo/a y me gusta influir.", "Soy empático/a y comprensivo/a.", "Soy riguroso/a y me gusta la calidad.")
 ]
 
-# Asignar dimensión a cada pregunta (cíclico D-I-S-C)
+# Convertir a lista plana de 28 preguntas
 QUESTIONS = []
-for i, texto in enumerate(PREGUNTAS):
-    dim = DIM_LIST[i % 4]
+for i, (d, i_, s, c) in enumerate(DISC_ITEMS):
     QUESTIONS.append({
-        "text": texto,
-        "dim": dim,
         "key": f"Q{i+1}",
-        "code": DIMENSIONES[dim]["code"]
+        "options": [d, i_, s, c],  # orden: D, I, S, C
+        "dim_order": ["Dominancia", "Influencia", "Estabilidad", "Cumplimiento"]
     })
 
 KEY2IDX = {q["key"]: i for i, q in enumerate(QUESTIONS)}
 
 # ---------------------------------------------------------------
-# Estado
-# ---------------------------------------------------------------
-if "stage" not in st.session_state:
-    st.session_state.stage = "inicio"  # inicio | test | resultados
-if "q_idx" not in st.session_state:
-    st.session_state.q_idx = 0
-if "answers" not in st.session_state:
-    st.session_state.answers = {q["key"]: None for q in QUESTIONS}
-if "fecha" not in st.session_state:
-    st.session_state.fecha = None
-if "_needs_rerun" not in st.session_state:
-    st.session_state._needs_rerun = False
-
-# ---------------------------------------------------------------
-# Utilidades de cálculo
+# Función de cálculo corregida
 # ---------------------------------------------------------------
 def compute_scores(answers: dict) -> dict:
-    buckets = {d: 0 for d in DIM_LIST}
+    # Inicializar contadores
+    scores = {d: 0 for d in DIM_LIST}
     counts = {d: 0 for d in DIM_LIST}
+    
     for q in QUESTIONS:
-        raw = answers.get(q["key"])
-        if raw is not None:
-            dim = q["dim"]
-            buckets[dim] += 1
+        selected_idx = answers.get(q["key"])
+        if selected_idx is not None and 0 <= selected_idx < 4:
+            dim = q["dim_order"][selected_idx]
+            scores[dim] += 1
             counts[dim] += 1
+    
     # Normalizar a 0–100
-    res = {}
+    result = {}
     for d in DIM_LIST:
-        perc = (buckets[d] / max(counts[d], 1)) * 100
-        res[d] = round(float(perc), 1)
-    return res
+        if counts[d] > 0:
+            result[d] = round((scores[d] / counts[d]) * 100, 1)
+        else:
+            result[d] = 0.0
+    return result
 
-def level_label(score: float):
-    if score >= 75:
-        return "Muy Alto", "Dominante"
-    if score >= 60:
-        return "Alto", "Marcado"
-    if score >= 40:
-        return "Promedio", "Moderado"
-    if score >= 25:
-        return "Bajo", "Suave"
-    return "Muy Bajo", "Mínimo"
+# ---------------------------------------------------------------
+# Vista de test corregida
+# ---------------------------------------------------------------
+def view_test():
+    i = st.session_state.q_idx
+    q = QUESTIONS[i]
+    p = (i + 1) / len(QUESTIONS)
+    st.progress(p, text=f"Progreso: {i+1}/{len(QUESTIONS)}")
+    
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.markdown(f"### Pregunta {i+1} de {len(QUESTIONS)}")
+    st.markdown("Selecciona la frase que **MEJOR** te describe:")
+    
+    # Mostrar las 4 opciones con etiquetas claras
+    option_labels = []
+    for j, frase in enumerate(q["options"]):
+        dim_name = q["dim_order"][j]
+        code = DIMENSIONES[dim_name]["code"]
+        icon = DIMENSIONES[dim_name]["icon"]
+        option_labels.append(f"{icon} **{code} — {frase}**")
+    
+    prev = st.session_state.answers.get(q["key"])
+    st.radio(
+        "Elige una opción",
+        options=range(4),
+        format_func=lambda x: option_labels[x],
+        index=prev if prev is not None else 0,
+        key=f"resp_{q['key']}",
+        label_visibility="collapsed",
+        on_change=on_answer_change,
+        args=(q["key"],),
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-def dimension_profile(d: str, score: float):
-    ds = DIMENSIONES[d]
-    if score >= 60:
-        f = ds["fort_high"]
-        r = ds["risk_high"]
-        rec = [
-            "Establecer canales formales de feedback para equilibrar estilo.",
-            "Practicar escucha activa en reuniones (3 segundos antes de responder)."
-        ]
-        roles = ds["roles_high"]
-        not_apt = ds.get("no_apt_high", [])
-        expl = "Tu estilo DISC en esta dimensión es una palanca clave en entornos que valoran estas cualidades."
-    elif score < 40:
-        f = ds["fort_low"]
-        r = ds["risk_low"]
-        rec = ds["recs_low"]
-        roles = ds["roles_low"]
-        not_apt = ds.get("no_apt_low", [])
-        expl = "Esta dimensión no es tu enfoque natural; útil en ciertos contextos, con riesgos si el rol la exige constantemente."
+# ---------------------------------------------------------------
+# Callback de respuesta (sin cambios, pero aseguramos el índice)
+# ---------------------------------------------------------------
+def on_answer_change(qkey: str):
+    st.session_state.answers[qkey] = st.session_state.get(f"resp_{qkey}")
+    idx = KEY2IDX[qkey]
+    if idx < len(QUESTIONS) - 1:
+        st.session_state.q_idx = idx + 1
     else:
-        f = ["Capacidad de adaptación según el contexto", "Equilibrio entre acción y reflexión"]
-        r = ["Puede generar ambigüedad en equipos que esperan claridad de estilo"]
-        rec = ["Definir cuándo activar o moderar esta dimensión según el rol", "Buscar feedback mensual sobre percepción de estilo"]
-        roles = ds["roles_high"][:2] + ds["roles_low"][:1]
-        not_apt = []
-        expl = "Perfil equilibrado: puedes modular tu estilo según las demandas del entorno."
-    return f, r, rec, roles, not_apt, expl
+        st.session_state.stage = "resultados"
+        st.session_state.fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+    st.session_state._needs_rerun = True
 
 # ---------------------------------------------------------------
 # Auto-avance
@@ -789,3 +767,4 @@ else:
 if st.session_state._needs_rerun:
     st.session_state._needs_rerun = False
     st.rerun()
+
