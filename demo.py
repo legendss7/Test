@@ -1,5 +1,4 @@
-
-# ============================================================
+# ============================================================ 
 # EPQR-A Operativo (5 dimensiones) · 40 ítems
 # Visual "card blanca + barra progreso" · Sin doble click
 # PDF ordenado (5 barras + cajas) · Envío automático por correo
@@ -234,11 +233,31 @@ def qualitative_level(norm_score):
 
 def build_short_desc(E, EE, DC, C, M):
     out = {}
-    out["E"]  = "Tendencia a interactuar y coordinar con otros cuando la tarea lo requiere." if E>2.0 else "Estilo más bien reservado, baja exposición pública."
-    out["EE"] = "Manejo estable frente a presión y cambio." if EE>2.0 else "Puede requerir apoyo en escenarios de alta urgencia."
-    out["DC"] = "Capacidad para marcar prioridades operativas y sostener criterios de cumplimiento." if DC>2.0 else "Prefiere evitar confrontación directa; espera orden sin choque."
-    out["C"]  = "Orientación a normas, búsqueda de imagen responsable y cumplimiento declarado." if C>2.0 else "Puede tensionar estándares si prima su propio criterio sobre lo formal."
-    out["M"]  = "Disposición declarada a cumplir y mantenerse en el puesto si las condiciones son claras." if M>2.0 else "Declara baja intención de permanencia si la adaptación inicial no es cómoda."
+    out["E"]  = (
+        "Tendencia a interactuar y coordinar con otros cuando la tarea lo requiere."
+        if E>2.0 else
+        "Estilo más bien reservado, baja exposición pública."
+    )
+    out["EE"] = (
+        "Manejo estable frente a presión y cambio."
+        if EE>2.0 else
+        "Puede requerir apoyo en escenarios de alta urgencia."
+    )
+    out["DC"] = (
+        "Capacidad para marcar prioridades operativas y sostener criterios de cumplimiento."
+        if DC>2.0 else
+        "Prefiere evitar confrontación directa; espera orden sin choque."
+    )
+    out["C"]  = (
+        "Orientación a normas, búsqueda de imagen responsable y cumplimiento declarado."
+        if C>2.0 else
+        "Puede tensionar estándares si prima su propio criterio sobre lo formal."
+    )
+    out["M"]  = (
+        "Disposición declarada a cumplir y mantenerse en el puesto si las condiciones son claras."
+        if M>2.0 else
+        "Declara baja intención de permanencia si la adaptación inicial no es cómoda."
+    )
     return out
 
 def build_strengths_risks(E, EE, DC, C, M):
@@ -302,7 +321,7 @@ def cargo_fit_text(job_key, E, EE, DC, C, M):
             f"CONSISTENTE con las exigencias habituales del cargo {cargo_name}."
         )
 
-# ---------- UTILS PDF ----------
+# ---------- HELPERS PDF ----------
 def _wrap(c, text, width, font="Helvetica", size=8):
     words = text.split()
     lines = []
@@ -318,7 +337,8 @@ def _wrap(c, text, width, font="Helvetica", size=8):
         lines.append(cur)
     return lines
 
-def _draw_par(c, text, x, y, width, font="Helvetica", size=8, leading=11, color=colors.black, max_lines=None):
+def _draw_par(c, text, x, y, width, font="Helvetica", size=8, leading=11,
+              color=colors.black, max_lines=None):
     c.setFont(font, size)
     c.setFillColor(color)
     lines = _wrap(c, text, width, font, size)
@@ -329,6 +349,186 @@ def _draw_par(c, text, x, y, width, font="Helvetica", size=8, leading=11, color=
         y -= leading
     return y
 
+def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
+    """
+    Tabla 'Detalle por dimensión' a ancho completo.
+    rows = [
+      { "dim":..., "puntaje":..., "nivel":..., "desc":... },
+      ...
+    ]
+    """
+
+    header_h   = 24     # alto encabezado tabla
+    row_h_base = 40     # alto mínimo por fila
+    pad_x      = 8
+    leading    = 10
+    font_hdr   = "Helvetica-Bold"
+    font_txt_b = "Helvetica-Bold"
+    font_txt   = "Helvetica"
+    size_hdr   = 9
+    size_cell  = 8
+
+    # Columnas (ajustadas para página A4 paisaje vertical con márgenes)
+    col_dim_x   = x + pad_x         # nombre dimensión
+    col_punt_x  = x + 200           # puntaje bruto
+    col_nivel_x = x + 260           # nivel cualitativo
+    col_desc_x  = x + 320           # descripción larga
+    table_right = x + w             # borde derecho caja
+
+    # Calcular alto total tabla (dinámico según wraps)
+    total_h = header_h
+    wrapped_rows = []
+
+    for r in rows:
+        dim_lines = _wrap(
+            c,
+            r["dim"],
+            col_punt_x - col_dim_x - 10,
+            font_txt_b,
+            size_cell
+        )
+        desc_lines = _wrap(
+            c,
+            r["desc"],
+            table_right - col_desc_x - pad_x,
+            font_txt,
+            size_cell
+        )
+
+        lines_needed = max(len(dim_lines), len(desc_lines), 1)
+        row_h = max(row_h_base, lines_needed * leading + 14)
+
+        wrapped_rows.append({
+            "dim_lines": dim_lines,
+            "puntaje":   r["puntaje"],
+            "nivel":     r["nivel"],
+            "desc_lines":desc_lines,
+            "row_h":     row_h
+        })
+        total_h += row_h
+
+    # Caja externa
+    c.setStrokeColor(colors.lightgrey)
+    c.setFillColor(colors.white)
+    c.rect(x, y_top-total_h, w, total_h, stroke=1, fill=1)
+
+    # Título
+    c.setFont(font_hdr, size_hdr)
+    c.setFillColor(colors.black)
+    c.drawString(x+pad_x, y_top-14, "Detalle por dimensión")
+
+    # línea bajo título
+    header_y_base = y_top - header_h
+    c.setStrokeColor(colors.lightgrey)
+    c.line(x, header_y_base, x+w, header_y_base)
+
+    # Encabezados de columnas
+    c.setFont(font_txt_b, size_cell)
+    c.setFillColor(colors.black)
+    c.drawString(col_dim_x,   header_y_base+leading-2, "Dimensión")
+    c.drawString(col_punt_x,  header_y_base+leading-2, "Puntaje")
+    c.drawString(col_nivel_x, header_y_base+leading-2, "Nivel")
+    c.drawString(col_desc_x,  header_y_base+leading-2, "Descripción breve")
+
+    # línea bajo encabezados
+    c.line(x, header_y_base-4, x+w, header_y_base-4)
+
+    # Dibujar filas
+    cursor_y = header_y_base-8
+    for row in wrapped_rows:
+        row_top_y    = cursor_y
+        row_bottom_y = cursor_y - row["row_h"]
+
+        # línea separadora fila
+        c.setStrokeColor(colors.lightgrey)
+        c.line(x, row_bottom_y, x+w, row_bottom_y)
+
+        # Dimensión (negrita, con wrap)
+        c.setFont(font_txt_b, size_cell)
+        text_y = row_top_y - 12
+        for dl in row["dim_lines"]:
+            c.drawString(col_dim_x, text_y, dl)
+            text_y -= leading
+
+        # Puntaje (solo bruto X/8)
+        c.setFont(font_txt, size_cell)
+        c.drawString(col_punt_x, row_top_y - 12, row["puntaje"])
+
+        # Nivel
+        c.drawString(col_nivel_x, row_top_y - 12, row["nivel"])
+
+        # Descripción breve (wrap completo en su columna)
+        c.setFont(font_txt, size_cell)
+        desc_y = row_top_y - 12
+        for dl2 in row["desc_lines"]:
+            c.drawString(col_desc_x, desc_y, dl2)
+            desc_y -= leading
+
+        cursor_y = row_bottom_y
+
+    # devolver nueva Y para seguir dibujando más abajo
+    return y_top - total_h - 16
+
+
+def draw_resumen_box_fullwidth(c, x, y_top, w, fortalezas, monitoreo):
+    """
+    Caja 'Resumen conductual observado' a ancho completo,
+    con listas de fortalezas y aspectos a monitorear.
+    Devuelve nueva Y después de dibujar la caja.
+    """
+    pad_x = 8
+    pad_top = 12
+    pad_bottom = 12
+    line_height = 10
+    font_tit  = "Helvetica-Bold"
+    font_body = "Helvetica"
+    size_tit  = 8
+    size_txt  = 7
+
+    # Medir contenido para altura dinámica
+    # Título + subtítulos + bullets (envueltos)
+    tmp_lines = []
+    tmp_lines.append(("Resumen conductual observado", True))
+    tmp_lines.append(("Fortalezas potenciales:", True))
+    for f in fortalezas:
+        tmp_lines.append(("• " + f, False))
+    tmp_lines.append(("Aspectos a monitorear / apoyo sugerido:", True))
+    for m in monitoreo:
+        tmp_lines.append(("• " + m, False))
+
+    # wrap y conteo
+    total_text_height = 0
+    wrapped_content = []
+    usable_w = w - 2*pad_x
+    for text, is_header in tmp_lines:
+        fnt = font_tit if is_header else font_body
+        sz  = size_tit if is_header else size_txt
+        wrapped = _wrap(c, text, usable_w, fnt, sz)
+        wrapped_content.append((wrapped, fnt, sz))
+        total_text_height += len(wrapped)*line_height + (4 if is_header else 0)
+
+    box_h = pad_top + total_text_height + pad_bottom
+
+    # draw box
+    c.setStrokeColor(colors.lightgrey)
+    c.setFillColor(colors.white)
+    c.rect(x, y_top - box_h, w, box_h, stroke=1, fill=1)
+
+    # draw text
+    yy = y_top - pad_top
+    for wrapped, fnt, sz in wrapped_content:
+        # si es título/sección (font_tit), bajamos un pelín extra arriba
+        c.setFont(fnt, sz)
+        c.setFillColor(colors.black)
+        for line in wrapped:
+            c.drawString(x+pad_x, yy, line)
+            yy -= line_height
+        yy -= 2  # pequeño espacio entre bloques
+
+    return y_top - box_h - 16
+
+
+# ---------- GENERAR PDF ORDENADO ----------
 def generate_pdf(candidate_name,
                  cargo_name,
                  fecha_eval,
@@ -343,17 +543,15 @@ def generate_pdf(candidate_name,
                  nota_text):
 
     buf = BytesIO()
-    W, H = A4
+    W, H = A4  # portrait
     c = canvas.Canvas(buf, pagesize=A4)
 
-    # márgenes más amplios
     margin_left = 36
     margin_right = 36
-    # top Y ~ 800 px
-    # bloque superior izquierdo y derecho
 
-    # Encabezado (dos columnas separadas mejor)
+    # ========== ENCABEZADO SUPERIOR IZQ / DER ==========
     c.setFont("Helvetica-Bold",10)
+    c.setFillColor(colors.black)
     c.drawString(margin_left, H-40, "EMPRESA / LOGO")
     c.setFont("Helvetica",7)
     c.drawString(margin_left, H-55, "Evaluación de personalidad ocupacional")
@@ -363,19 +561,18 @@ def generate_pdf(candidate_name,
     c.setFont("Helvetica",7)
     c.drawRightString(W-margin_right, H-55, "Uso interno RR.HH. / Procesos productivos")
 
-    # --- Cuadro Izquierdo: Gráfico de barras ---
+    # ========== GRÁFICO DE BARRAS IZQUIERDA ==========
     chart_x = margin_left
     chart_y_bottom = H-260
     chart_w = 250
     chart_h = 120
 
+    # eje Y y grilla
     c.setStrokeColor(colors.black)
     c.setLineWidth(1)
-    # eje Y principal
     c.line(chart_x, chart_y_bottom, chart_x, chart_y_bottom+chart_h)
 
-    # rejilla y etiquetas 0..6
-    for lvl in range(0,7):
+    for lvl in range(0,7):  # 0..6
         yv = chart_y_bottom + (lvl/6.0)*chart_h
         c.setFont("Helvetica",6)
         c.setFillColor(colors.black)
@@ -412,6 +609,7 @@ def generate_pdf(candidate_name,
         c.setFillColor(colors.black)
         c.drawCentredString(bx+bar_w/2.0, chart_y_bottom-14, label)
 
+        # mostramos puntaje bruto y nivel (1 sola escala normalizada también sirve)
         c.setFont("Helvetica",6)
         c.drawCentredString(
             bx+bar_w/2.0,
@@ -419,7 +617,7 @@ def generate_pdf(candidate_name,
             f"{raw_scores[key]}/8  {val_norm:.1f}/6  {lvl_txt}"
         )
 
-    # línea negra sobre puntos
+    # línea negra que une los topes
     c.setStrokeColor(colors.black)
     c.setLineWidth(1.2)
     for j in range(len(tops)-1):
@@ -434,10 +632,12 @@ def generate_pdf(candidate_name,
     c.setFillColor(colors.black)
     c.drawString(chart_x, chart_y_bottom+chart_h+12, "Perfil conductual (0–6)")
 
-    # --- Cuadro Derecho Superior: Datos candidato ---
+    # ========== CAJAS DERECHA (DATOS + GUÍA) ==========
     box_x = margin_left + chart_w + 30
-    box_y_top = H-140
     box_w = W - margin_right - box_x
+
+    # Datos del candidato
+    box_y_top = H-140
     box_h = 70
     c.setStrokeColor(colors.lightgrey)
     c.setFillColor(colors.white)
@@ -459,7 +659,7 @@ def generate_pdf(candidate_name,
     c.setFillColor(colors.grey)
     c.drawString(box_x+8, yy, "Documento interno. No clínico.")
 
-    # --- Cuadro Derecho Medio: Guía dimensiones ---
+    # Guía de lectura dimensiones
     guide_y_top = H-230
     guide_h = 75
     c.setStrokeColor(colors.lightgrey)
@@ -474,7 +674,7 @@ def generate_pdf(candidate_name,
     c.setFont("Helvetica",7)
     lines_dim = [
         "E  = Extraversión / Iniciativa social",
-        "EE = Estabilidad Emocional (manejo de presión)",
+        "EE = Estabilidad Emocional (manejo presión)",
         "DC = Dureza Conductual / Estilo directo",
         "C  = Consistencia / Autopresentación",
         "M  = Motivación / Compromiso con el Puesto",
@@ -483,73 +683,7 @@ def generate_pdf(candidate_name,
         c.drawString(box_x+8, gy, gl)
         gy -= 10
 
-    # --- Cuadro Derecho Inferior: Resumen conductual ---
-    sum_y_top = H-330
-    sum_h = 110
-    c.setStrokeColor(colors.lightgrey)
-    c.setFillColor(colors.white)
-    c.rect(box_x, sum_y_top-sum_h, box_w, sum_h, stroke=1, fill=1)
-
-    sy = sum_y_top-14
-    c.setFont("Helvetica-Bold",8)
-    c.setFillColor(colors.black)
-    c.drawString(box_x+8, sy, "Resumen conductual observado")
-    sy -= 14
-
-    c.setFont("Helvetica-Bold",7)
-    c.drawString(box_x+8, sy, "Fortalezas potenciales:")
-    sy -= 12
-    c.setFont("Helvetica",7)
-    for f in fortalezas:
-        wrapped = _wrap(c, "• " + f, box_w-16, "Helvetica",7)
-        for line in wrapped:
-            c.drawString(box_x+12, sy, line)
-            sy -= 10
-            if sy < sum_y_top - sum_h + 28:
-                break
-        if sy < sum_y_top - sum_h + 28:
-            break
-
-    sy -= 6
-    c.setFont("Helvetica-Bold",7)
-    c.drawString(box_x+8, sy, "Aspectos a monitorear / apoyo sugerido:")
-    sy -= 12
-    c.setFont("Helvetica",7)
-    for m in monitoreo:
-        wrapped = _wrap(c, "• " + m, box_w-16, "Helvetica",7)
-        for line in wrapped:
-            c.drawString(box_x+12, sy, line)
-            sy -= 10
-            if sy < sum_y_top - sum_h + 8:
-                break
-        if sy < sum_y_top - sum_h + 8:
-            break
-
-    # --- Tabla de dimensiones (ocupa toda la fila abajo del gráfico) ---
-    table_x = margin_left
-    table_y_top = H-360
-    table_w = (box_x - 20) - table_x  # para que quepa bajo el gráfico a la izquierda
-    table_h = 140
-
-    c.setStrokeColor(colors.lightgrey)
-    c.setFillColor(colors.white)
-    c.rect(table_x, table_y_top-table_h, table_w, table_h, stroke=1, fill=1)
-
-    c.setFont("Helvetica-Bold",8)
-    c.setFillColor(colors.black)
-    c.drawString(table_x+8, table_y_top-14, "Detalle por dimensión")
-
-    # encabezados
-    header_y = table_y_top-28
-    c.setFont("Helvetica-Bold",7)
-    c.drawString(table_x+8,   header_y, "Dimensión")
-    c.drawString(table_x+110, header_y, "Puntaje")
-    c.drawString(table_x+170, header_y, "Nivel")
-    c.drawString(table_x+210, header_y, "Descripción breve")
-
-    row_y = header_y-12
-    row_gap = 26
-
+    # ========== TABLA DETALLE POR DIMENSIÓN (ANCHO COMPLETO) ==========
     dims_display = [
         ("E",  "Extraversión"),
         ("EE", "Estabilidad Emocional"),
@@ -558,110 +692,111 @@ def generate_pdf(candidate_name,
         ("M",  "Motivación / Compromiso con el Puesto"),
     ]
 
+    table_rows = []
     for key,label in dims_display:
-        raw_v  = raw_scores[key]
-        norm_v = norm_scores[key]
-        lvl_v  = qualitative_level(norm_v)
-        desc_v = table_desc[key]
+        raw_v  = raw_scores[key]        # bruto 0..8
+        lvl_v  = qualitative_level(norm_scores[key])
+        desc_v = table_desc[key]        # descripción breve
+        table_rows.append({
+            "dim": label,
+            "puntaje": f"{raw_v}/8",    # SOLO puntaje bruto
+            "nivel": lvl_v,
+            "desc": desc_v,
+        })
 
-        # columna 1-3 fijas
-        c.setFont("Helvetica-Bold",7)
-        c.drawString(table_x+8, row_y, label)
+    table_x = margin_left
+    table_y_top = H-360  # punto vertical para iniciar tabla
+    table_w = W - margin_right - margin_left
 
-        c.setFont("Helvetica",7)
-        c.drawString(table_x+110, row_y, f"{raw_v}/8  {norm_v:.1f}/6")
-        c.drawString(table_x+170, row_y, lvl_v)
+    after_table_y = draw_table_dimensiones_fullwidth(
+        c,
+        table_x,
+        table_y_top,
+        table_w,
+        table_rows
+    )
 
-        # descripción envuelta en 2 líneas máx
-        row_y = _draw_par(
-            c,
-            desc_v,
-            table_x+210,
-            row_y,
-            table_w-220,
-            font="Helvetica",
-            size=7,
-            leading=10,
-            color=colors.black,
-            max_lines=2
-        )
-        row_y -= (row_gap - 20)  # más aire entre filas
+    # ========== RESUMEN CONDUCTUAL OBSERVADO (ANCHO COMPLETO) ==========
+    after_resumen_y = draw_resumen_box_fullwidth(
+        c,
+        margin_left,
+        after_table_y,
+        table_w,
+        fortalezas,
+        monitoreo
+    )
 
-    # --- Bloque Conclusión Operativa (dos subcajas internas) ---
+    # ========== BLOQUE FINAL: COMPROMISO / AJUSTE / NOTA ==========
     concl_x = margin_left
-    concl_y_top = 160
+    concl_y_top = after_resumen_y
     concl_w = W - margin_right - margin_left
-    concl_h = 160
+
+    # ahora este bloque final tiene 3 secciones internas
+    # medimos altura dinámica para dibujar caja
+    pad_x = 8
+    pad_top = 12
+    pad_bottom = 12
+    line_height = 10
+
+    # armamos todo el texto en orden:
+    final_lines = [
+        ("Compromiso / Permanencia", "Helvetica-Bold", 8, colors.black, compromiso_text),
+        ("Ajuste al cargo evaluado", "Helvetica-Bold", 8, colors.black, ajuste_text),
+        ("Nota metodológica", "Helvetica-Bold", 8, colors.black, nota_text),
+    ]
+
+    # Estimar altura antes de dibujar
+    total_h_content = 0
+    wrapped_blocks = []
+    usable_w = concl_w - 2*pad_x
+
+    for (section_title, fnt_t, sz_t, col_t, body_txt) in final_lines:
+        # título
+        title_wrapped = _wrap(c, section_title, usable_w, fnt_t, sz_t)
+        body_wrapped  = _wrap(c, body_txt, usable_w, "Helvetica", 7)
+
+        block_height = len(title_wrapped)*line_height + 4 \
+                     + len(body_wrapped)*line_height + 10
+        total_h_content += block_height
+        wrapped_blocks.append((title_wrapped, fnt_t, sz_t, col_t, body_wrapped))
+
+    concl_h = pad_top + total_h_content + pad_bottom
+
     c.setStrokeColor(colors.lightgrey)
     c.setFillColor(colors.white)
-    c.rect(concl_x, concl_y_top-concl_h, concl_w, concl_h, stroke=1, fill=1)
+    c.rect(concl_x, concl_y_top - concl_h, concl_w, concl_h, stroke=1, fill=1)
 
-    # Subbloque 1: Compromiso / Permanencia
-    sub1_x = concl_x+8
-    sub1_y_top = concl_y_top-14
-    sub1_w = concl_w-16
-    c.setFont("Helvetica-Bold",8)
-    c.setFillColor(colors.black)
-    c.drawString(sub1_x, sub1_y_top, "Compromiso / Permanencia")
-    y_after_1 = _draw_par(
-        c,
-        compromiso_text,
-        sub1_x,
-        sub1_y_top-14,
-        sub1_w,
-        font="Helvetica",
-        size=7,
-        leading=10,
-        color=colors.black,
-        max_lines=4
-    )
-
-    # Subbloque 2: Ajuste al cargo
-    sub2_y_top = y_after_1-8
-    c.setFont("Helvetica-Bold",8)
-    c.setFillColor(colors.black)
-    c.drawString(sub1_x, sub2_y_top, "Ajuste al cargo evaluado")
-    y_after_2 = _draw_par(
-        c,
-        ajuste_text,
-        sub1_x,
-        sub2_y_top-14,
-        sub1_w,
-        font="Helvetica",
-        size=7,
-        leading=10,
-        color=colors.black,
-        max_lines=4
-    )
-
-    # Nota metodológica, abajo de todo
-    nota_y_top = y_after_2-10
-    c.setFont("Helvetica-Bold",8)
-    c.setFillColor(colors.black)
-    c.drawString(sub1_x, nota_y_top, "Nota metodológica")
-    _draw_par(
-        c,
-        nota_text,
-        sub1_x,
-        nota_y_top-14,
-        sub1_w,
-        font="Helvetica",
-        size=6,
-        leading=9,
-        color=colors.grey,
-        max_lines=8
-    )
+    yy = concl_y_top - pad_top
+    for (title_wrapped, fnt_t, sz_t, col_t, body_wrapped) in wrapped_blocks:
+        # título
+        c.setFont(fnt_t, sz_t)
+        c.setFillColor(col_t)
+        for line in title_wrapped:
+            c.drawString(concl_x+pad_x, yy, line)
+            yy -= line_height
+        yy -= 2
+        # cuerpo
+        c.setFont("Helvetica",7)
+        c.setFillColor(colors.black)
+        for line in body_wrapped:
+            c.drawString(concl_x+pad_x, yy, line)
+            yy -= line_height
+        yy -= 8
 
     # footer pequeño
     c.setFont("Helvetica",6)
     c.setFillColor(colors.grey)
-    c.drawRightString(W-margin_right, 40, "Uso interno RR.HH. · EPQR-A Adaptado · No clínico")
+    c.drawRightString(W-margin_right, 40,
+        "Uso interno RR.HH. · EPQR-A Adaptado · No clínico"
+    )
 
     c.showPage()
     c.save()
     buf.seek(0)
     return buf.read()
 
+
+# ---------- EMAIL ----------
 def send_email_with_pdf(to_email, pdf_bytes, filename, subject, body_text):
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -678,7 +813,8 @@ def send_email_with_pdf(to_email, pdf_bytes, filename, subject, body_text):
         smtp.login(FROM_ADDR, APP_PASS)
         smtp.send_message(msg)
 
-# ---------- GENERAR Y ENVIAR INFORME ----------
+
+# ---------- GENERAR Y ENVIAR INFORME AL TERMINAR ----------
 def finalize_and_send():
     scores = compute_scores(st.session_state.answers)
     raw_scores  = scores["raw"]
@@ -740,6 +876,7 @@ def finalize_and_send():
                 ),
             )
         except Exception:
+            # si falla el envío no detenemos la app
             pass
         st.session_state.already_sent = True
 
@@ -758,7 +895,7 @@ def choose_answer(value_yes_or_no: int):
         st.session_state._need_rerun = True
 
 
-# ---------- VISTAS ----------
+# ---------- VISTAS STREAMLIT ----------
 def view_select_job():
     st.markdown("### Evaluación EPQR-A Operativa")
     st.write("Seleccione el cargo a evaluar:")
@@ -804,7 +941,7 @@ def view_test():
     q = QUESTIONS[q_idx]
     progreso = (q_idx+1)/TOTAL_QUESTIONS
 
-    # Header
+    # Encabezado
     st.markdown(
         f"""
         <div style="
@@ -936,7 +1073,7 @@ def view_done():
     )
 
 
-# ---------- FLUJO ----------
+# ---------- FLUJO PRINCIPAL ----------
 if st.session_state.stage == "select_job":
     view_select_job()
 
