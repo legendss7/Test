@@ -1,14 +1,15 @@
 import streamlit as st
-from typing import Dict, List
+from typing import Dict
 import smtplib
 from email.message import EmailMessage
 from io import BytesIO
+from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from datetime import datetime
+from reportlab.lib import colors
 
 # ============================================================
-# CONFIG GENERAL
+# CONFIG GENERAL STREAMLIT
 # ============================================================
 st.set_page_config(
     page_title="EPQR-A | Evaluación Operativa",
@@ -120,11 +121,9 @@ html, body, [data-testid="stAppViewContainer"]{
 </style>
 """, unsafe_allow_html=True)
 
-
 # ============================================================
-# PREGUNTAS (30 ÍTEMS) Y CATEGORÍAS
+# PREGUNTAS (30 ÍTEMS) Y CATEGORÍAS EPQR-A ADAPTADO
 # ============================================================
-
 QUESTIONS = [
     "¿Tiene con frecuencia subidas y bajadas de su estado de ánimo?",
     "¿Es usted una persona habladora?",
@@ -158,9 +157,9 @@ QUESTIONS = [
     "¿Le cuesta seguir reglas que considera innecesarias?"
 ]
 
-# Mapa de categorías:
+# CATEGORÍAS EPQR-A (adaptadas)
 # E = Extraversión / energía social / iniciativa interpersonal
-# N = Neuroticismo → lo vamos a reportar como Estabilidad Emocional inversa
+# N = Neuroticismo → reportaremos como Estabilidad Emocional invertida
 # P = Dureza Conductual / estilo directo / tolerancia a conflicto
 # S = Consistencia / Autopresentación / deseabilidad social
 CATEGORIES = [
@@ -176,9 +175,8 @@ DIM_COUNTS = {
     "S": CATEGORIES.count("S"),
 }
 
-
 # ============================================================
-# PERFILES DE CARGO Y RANGOS ESPERADOS (ESCALA 0–6)
+# PERFILES DE CARGO Y RANGOS ESPERADOS (0–6)
 # ============================================================
 JOB_PROFILES = {
     "operario": {
@@ -223,10 +221,9 @@ JOB_PROFILES = {
     },
 }
 
-
 # ============================================================
-# ESTADO
-# fases: "role" -> "candidate" -> "test" -> "done"
+# ESTADO GLOBAL DE LA APP
+# phases: "role" -> "candidate" -> "test" -> "done"
 # ============================================================
 def init_state():
     if "phase" not in st.session_state:
@@ -251,14 +248,13 @@ def init_state():
 init_state()
 
 # ============================================================
-# UTILIDADES DE CÁLCULO
+# CÁLCULO DE PUNTAJES
 # ============================================================
 def compute_raw_scores(answers: Dict[int, int]) -> Dict[str, int]:
     """
-    EPQR-A binario Sí/No.
-    Regla:
-    - Para P y S interpretamos "No" (0) como control / sinceridad / ajuste normativo → suma 1.
-    - Para E y N interpretamos "Sí" (1) como presencia del rasgo → suma 1.
+    EPQR-A binario Sí(1)/No(0).
+    Para P y S interpretamos "No"(0) como control/ajuste normativo → suma 1.
+    Para E y N interpretamos "Sí"(1) como presencia del rasgo → suma 1.
     """
     scores = {"E": 0, "N": 0, "P": 0, "S": 0}
     for idx, cat in enumerate(CATEGORIES):
@@ -288,7 +284,7 @@ def scale_scores_to_6(raw_scores: Dict[str, int]) -> Dict[str, int]:
 
 def level_label_numeric(scaled_val: int) -> str:
     """
-    Traduce un valor 0–6 a Bajo / Medio / Alto.
+    Pasa valor 0–6 a Bajo / Medio / Alto.
     """
     if scaled_val <= 2:
         return "Bajo"
@@ -301,8 +297,8 @@ def level_label_numeric(scaled_val: int) -> str:
 def evaluate_fit_for_job(scaled_scores: Dict[str, int], profile: dict):
     """
     Compara con los requisitos del cargo (0–6 por dimensión).
-    Cuenta cuántas dimensiones están en rango.
-    Devuelve también match_pct y matchLevel interno.
+    Devuelve matchLevel = APTO / RIESGO PARCIAL / NO APTO DIRECTO
+    + match_pct, issues.
     """
     req = profile["requirements"]
     in_range_count = 0
@@ -321,7 +317,6 @@ def evaluate_fit_for_job(scaled_scores: Dict[str, int], profile: dict):
             elif val > mx:
                 issues.append(f"{dim}: sobre el rango esperado para {profile['title']}")
 
-    # regla interna
     if in_range_count >= 3:
         matchLevel = "APTO"
     elif in_range_count == 2:
@@ -338,9 +333,8 @@ def evaluate_fit_for_job(scaled_scores: Dict[str, int], profile: dict):
         "in_range_count": in_range_count,
     }
 
-
 # ============================================================
-# TEXTOS DESCRIPTIVOS POR DIMENSIÓN
+# DESCRIPTORES CUALITATIVOS
 # ============================================================
 def describe_extraversión(level:str):
     if level == "Alto":
@@ -355,13 +349,11 @@ def describe_extraversión(level:str):
             "impacto": "mantener comunicación funcional cuando es necesaria",
             "contexto": "entornos donde se requieren intercambios puntuales pero también foco operativo",
         }
-    # Bajo
     return {
         "conductual": "mantener un perfil más reservado y evitar la exposición innecesaria",
         "impacto": "la concentración en la tarea y el trabajo silencioso",
         "contexto": "funciones estructuradas, con menor necesidad de interacción social constante",
     }
-
 
 def describe_estabilidad(level:str):
     if level == "Alto":
@@ -376,13 +368,11 @@ def describe_estabilidad(level:str):
             "impacto": "necesitar claridad operativa cuando hay exigencia sostenida",
             "apoyo": "beneficiarse de instrucciones directas cuando hay cambios bruscos",
         }
-    # Bajo estabilidad = Alto neuroticismo
     return {
         "estres": "experimentar preocupación con mayor intensidad en escenarios de mucha presión",
         "impacto": "requerir contención verbal, validación rápida o acompañamiento cercano cuando hay urgencia prolongada",
         "apoyo": "beneficiarse de retroalimentación calmada y pasos concretos",
     }
-
 
 def describe_dureza(level:str):
     if level == "Alto":
@@ -401,7 +391,6 @@ def describe_dureza(level:str):
             "funcional": "contextos donde se requiere foco en resultados pero también trabajo en equipo",
             "sensibilidad": "modelos muy rígidos o demasiado confrontativos",
         }
-    # Bajo
     return {
         "interpersonal": "mantener un estilo más cooperativo y de baja confrontación directa",
         "prioriza": "la relación interpersonal y la reducción de tensiones",
@@ -410,99 +399,66 @@ def describe_dureza(level:str):
         "sensibilidad": "escenarios que exigen frenar conductas de otros con firmeza inmediata",
     }
 
-
 def describe_sinceridad(level:str):
     if level == "Alto":
         return {
             "transparencia": "responder de manera consistente con normas formales y expectativas de la organización",
-            "imagen": "cuidar activamente la forma en que se muestra frente a figuras de autoridad",
+            "imagen": "cuida activamente la forma en que se muestra frente a figuras de autoridad",
         }
     if level == "Medio":
         return {
             "transparencia": "presentarse de forma razonablemente directa, ajustando el discurso según contexto",
-            "imagen": "buscar quedar bien evaluado sin forzar demasiado la autoimagen",
+            "imagen": "busca quedar bien evaluado sin forzar demasiado la autoimagen",
         }
-    # Bajo
     return {
-        "transparencia": "entregar respuestas que pueden ser más espontáneas, menos filtradas socialmente",
-        "imagen": "mostrar menor esfuerzo explícito por gestionar la impresión que genera",
+        "transparencia": "entregar respuestas más espontáneas y menos filtradas socialmente",
+        "imagen": "muestra menor esfuerzo explícito por gestionar la impresión que genera",
     }
 
-
 # ============================================================
-# FORTALEZAS Y APOYOS (bullets)
+# RESUMENES BULLETS
 # ============================================================
 def build_strength_bullets(levelE, levelN, levelP, levelS):
     out = []
-    # Extraversión alta / media
     if levelE in ["Alto", "Medio"]:
         out.append("Disposición a comunicarse de manera clara frente a otras personas cuando la tarea lo requiere.")
     else:
         out.append("Capacidad para mantener foco individual en la tarea sin necesidad de alta interacción social.")
-
-    # Estabilidad alta / media
     if levelN in ["Alto", "Medio"]:
         out.append("Tendencia a sostener el ritmo de trabajo en escenarios de presión operativa inmediata.")
     else:
         out.append("Capacidad para identificar rápidamente cuando una situación le resulta demandante y pedir apoyo.")
-
-    # Dureza alta / media
     if levelP in ["Alto", "Medio"]:
         out.append("Capacidad para marcar prioridades operativas y sostener criterios de cumplimiento.")
     else:
         out.append("Preferencia por resolver diferencias mediante diálogo y acuerdos antes que confrontación directa.")
-
-    # Sinceridad alta / media
     if levelS in ["Alto", "Medio"]:
         out.append("Orientación a cumplir normas formales y protocolos establecidos.")
     else:
         out.append("Estilo espontáneo que puede facilitar conversaciones francas en terreno.")
-
-    # Extra general
     out.append("Tendencia a mantener la tarea como eje central del desempeño diario.")
     return out[:5]
 
-
 def build_support_bullets(levelE, levelN, levelP, levelS):
     out = []
-    # Estabilidad baja (N bajo = estable alto; OJO acá:
-    # recordemos: levelN aquí corresponde al nivel de Estabilidad Emocional,
-    # que derivamos desde N escalado pero invertido para la narrativa)
     if levelN == "Bajo":
         out.append("Podría requerir contención breve y recordatorios concretos en escenarios de alta urgencia sostenida.")
-
-    # Dureza muy alta / muy baja → comunicación
     if levelP == "Alto":
         out.append("Se sugiere acordar normas explícitas de comunicación para evitar que su estilo directo sea percibido como confrontacional.")
     elif levelP == "Bajo":
         out.append("Podría beneficiarse de apoyo para sostener límites firmes cuando otras personas no cumplen estándares operativos.")
-
-    # Extraversión baja
     if levelE == "Bajo":
         out.append("Puede requerir que se valide explícitamente su voz en reuniones, para que comunique incidentes críticos a tiempo.")
-
-    # Sinceridad muy alta (gestión de imagen)
     if levelS == "Alto":
         out.append("Se sugiere retroalimentación directa y específica, ya que la persona puede tender a responder según lo socialmente esperado.")
-
-    # fallback mínimo
     if not out:
         out.append("Podría requerir retroalimentación clara y temprana cuando cambian prioridades de forma brusca.")
-
     return out[:4]
 
-
 # ============================================================
-# ARMAR INFORME NARRATIVO COMPLETO
+# ARMAR INFORME NARRATIVO + RESUMEN PARA PDF
 # ============================================================
 def build_final_report():
-    """
-    1. Calcula puntajes
-    2. Interpreta niveles Bajo/Medio/Alto
-    3. Construye narrativa con el formato pedido
-    4. Guarda en session_state.final_report
-    """
-
     answers = st.session_state.answers
     candidate = st.session_state.candidate_name
     evaluator = st.session_state.evaluator_email
@@ -515,7 +471,7 @@ def build_final_report():
 
     # niveles cualitativos por dimensión
     levelE = level_label_numeric(scaled_scores["E"])
-    levelN_stability = level_label_numeric(6 - scaled_scores["N"])  # invertimos N para reportar Estabilidad Emocional
+    levelN_stability = level_label_numeric(6 - scaled_scores["N"])  # Estabilidad emocional
     levelP = level_label_numeric(scaled_scores["P"])
     levelS = level_label_numeric(scaled_scores["S"])
 
@@ -540,60 +496,8 @@ def build_final_report():
             f"focalizada y verificación de referencias."
         )
 
-    # fortalezas y apoyos
     fortalezas = build_strength_bullets(levelE, levelN_stability, levelP, levelS)
-    apoyos = build_support_bullets(levelE, levelN_stability, levelP, levelS)
-
-    # párrafo de síntesis general
-    sintesis_general = (
-        f"En conjunto, los resultados describen a {candidate} como una persona que "
-        f"{'tiende a interactuar con otras personas de manera activa y directa' if levelE=='Alto' else ('adapta su nivel de exposición social según la situación' if levelE=='Medio' else 'prefiere mantener un perfil más reservado y de foco individual')} "
-        f"y que frente a situaciones de presión tiende a {dN['estres']}. "
-        f"En lo interpersonal, su estilo comunicacional aparece como "
-        f"{dP['interpersonal']}, privilegiando {dP['prioriza']}. "
-        f"Esta configuración puede resultar especialmente adecuada en entornos donde se requiere "
-        f"{dP['funcional']} y puede presentar desafíos en escenarios que demandan "
-        f"{dP['sensibilidad']} sin apoyo adicional. "
-        f"Respecto al modo de trabajo, el perfil sugiere que {candidate} "
-        f"{'puede asumir la conducción operativa puntual y dar instrucciones claras' if levelE in ['Alto','Medio'] else 'prefiere ejecutar con claridad instrucciones definidas, más que dirigir directamente a otros'}, "
-        f"y que puede sostener el desempeño cuando las reglas están claras y las prioridades están definidas."
-    )
-
-    # armamos texto de cada dimensión según formato pedido
-    dim_extraversion_txt = (
-        f"El puntaje de {candidate} en Extraversión es {levelE} "
-        f"({scaled_scores['E']} en escala 0–6). "
-        f"Esto sugiere que la persona tiende a {dE['conductual']}, "
-        f"lo que en un entorno de trabajo implica una preferencia por {dE['impacto']}. "
-        f"Este estilo puede favorecer el desempeño en tareas que requieren {dE['contexto']}."
-    )
-
-    dim_estabilidad_txt = (
-        f"El puntaje en Estabilidad Emocional es {levelN_stability} "
-        f"({6 - scaled_scores['N']} en escala 0–6). "
-        f"Frente a presión o cambio, {candidate} tiende a {dN['estres']}. "
-        f"En términos laborales, esto significa que en situaciones de alta demanda podría "
-        f"{dN['impacto']}. "
-        f"Cuando las exigencias son sostenidas, puede requerir {dN['apoyo']}."
-    )
-
-    dim_dureza_txt = (
-        f"El puntaje en Dureza Conductual / Estilo Directo es {levelP} "
-        f"({scaled_scores['P']} en escala 0–6). "
-        f"Esto indica una tendencia a {dP['interpersonal']}, "
-        f"privilegiando {dP['prioriza']} incluso en presencia de desacuerdo. "
-        f"En el trabajo, este patrón puede traducirse en {dP['conflicto']}, "
-        f"lo que resulta funcional en contextos donde se requiere {dP['funcional']} "
-        f"y que podría percibirse como desafiante en equipos que esperan {dP['sensibilidad']}."
-    )
-
-    dim_sinceridad_txt = (
-        f"El puntaje en Consistencia / Autopresentación es {levelS} "
-        f"({scaled_scores['S']} en escala 0–6). "
-        f"Esto sugiere que la persona tiende a {dS['transparencia']} en contextos evaluativos. "
-        f"Este patrón indica que {candidate} {dS['imagen']}, "
-        f"lo que es común en procesos de selección."
-    )
+    apoyos     = build_support_bullets(levelE, levelN_stability, levelP, levelS)
 
     nota_metodologica = (
         "Este informe se basa en la auto-respuesta declarada por la persona evaluada en el "
@@ -604,7 +508,15 @@ def build_final_report():
         "experiencia y evaluación técnica del cargo."
     )
 
-    # Construimos el objeto final
+    # descripción breve para sliders
+    slider_text = {
+        "E":  f"{levelE} / interacción social y toma de iniciativa",
+        "EE": f"{levelN_stability} / manejo de presión y control emocional",
+        "DC": f"{levelP} / estilo directo y foco en resultado",
+        "C":  f"{levelS} / consistencia y alineación a normas",
+    }
+
+    # guardamos todo
     st.session_state.final_report = {
         "candidate": candidate,
         "cargo": cargo_title,
@@ -612,133 +524,277 @@ def build_final_report():
         "evaluator": evaluator,
 
         "scores_scaled": scaled_scores,           # numérico 0–6 por dimensión
-        "scores_raw": raw_scores,                 # bruto interno
         "levelE": levelE,
         "levelN": levelN_stability,               # Estabilidad emocional ya invertida
         "levelP": levelP,
         "levelS": levelS,
 
-        "extraversión_txt": dim_extraversion_txt,
-        "estabilidad_txt": dim_estabilidad_txt,
-        "dureza_txt": dim_dureza_txt,
-        "sinceridad_txt": dim_sinceridad_txt,
-
-        "sintesis_general": sintesis_general,
         "fortalezas": fortalezas,
         "apoyos": apoyos,
-        "nota": nota_metodologica,
+
+        "slider_text": slider_text,
         "cierre": cierre_final,
+        "nota": nota_metodologica,
     }
 
-
 # ============================================================
-# PDF GENERATION (usa final_report con narrativa)
+# GENERAR PDF ESTILO DISC / PERFIL VISUAL
 # ============================================================
 def generate_pdf_bytes(report: dict) -> bytes:
     """
-    Genera PDF narrativo EXACTO como lo definiste:
-    - Datos del candidato
-    - Objetivo
-    - Resultados por dimensión (con puntajes y nivel)
-    - Estilo general
-    - Fortalezas
-    - Aspectos a monitorear
-    - Nota metodológica
-    - Ajuste al cargo (cierre)
+    PDF estilo perfil DISC/operativo:
+    - Header con logo/texto
+    - Caja datos candidato
+    - Gráfico barras + línea negra
+    - Resumen fortalezas / apoyo
+    - Sliders con puntos
+    - Conclusión + nota metodológica
     """
+
+    cand = report["candidate"]
+    cargo = report["cargo"]
+    fecha = report["fecha"]
+    evaluador = report["evaluator"]
+
+    scores = report["scores_scaled"]  # {"E":x,"N":x,"P":x,"S":x} en 0-6
+    stab_val = 6 - scores["N"]        # Estabilidad Emocional visualizada alto=mejor control
+    e_val   = scores["E"]
+    p_val   = scores["P"]
+    s_val   = scores["S"]
+
+    levelE = report["levelE"]
+    levelN = report["levelN"]   # Estabilidad Emocional cualitativa
+    levelP = report["levelP"]
+    levelS = report["levelS"]
+
+    fortalezas = report["fortalezas"][:3]
+    apoyos     = report["apoyos"][:2]
+
+    slider_text = report["slider_text"]
+    cierre      = report["cierre"]
+    nota        = report["nota"]
+
+    dims_labels  = ["E", "EE", "DC", "C"]
+    dims_scores  = [e_val, stab_val, p_val, s_val]  # escala 0–6
+    dims_levels  = [levelE, levelN, levelP, levelS]
 
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
-    y = height - 40
+    W, H = A4  # ~595x842
 
-    def line(txt, size=10, bold=False, gap=14):
-        nonlocal y
-        if y < 60:
-            c.showPage()
-            y = height - 40
-        fontname = "Helvetica-Bold" if bold else "Helvetica"
-        c.setFont(fontname, size)
-        for piece in txt.split("\n"):
-            c.drawString(40, y, piece)
-            y -= gap
+    def draw_text(x, y, txt, size=9, bold=False, color=colors.black):
+        c.setFillColor(color)
+        c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
+        for line in txt.split("\n"):
+            c.drawString(x, y, line)
+            y -= (size + 2)
+        return y
 
-    # --- Sección: Datos del candidato ---
-    line("DATOS DEL CANDIDATO", size=12, bold=True, gap=16)
-    line(f"Nombre del evaluado: {report['candidate']}", size=10)
-    line(f"Cargo al que postula / área evaluada: {report['cargo']}", size=10)
-    line(f"Fecha de evaluación: {report['fecha']}", size=10)
-    line(f"Evaluador / área responsable: {report['evaluator']}", size=10)
-    line(" ", gap=10)
+    def draw_header():
+        # IZQ: logo/brand
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(40, H-50, "EMPRESA / LOGO")
+        c.setFont("Helvetica", 7)
+        c.drawString(40, H-62, "Evaluación de personalidad ocupacional")
 
-    # --- Objetivo de la evaluación ---
-    objetivo = (
-        "El instrumento EPQR-A mide rasgos de personalidad relevantes en contexto laboral: "
-        "Extraversión, Estabilidad Emocional (Neuroticismo inverso), Dureza Conductual / "
-        "Estilo Directo y Consistencia / Autopresentación.\n"
-        "El propósito es describir el estilo relacional, la forma de manejar presión y "
-        "la manera en que la persona actúa en entornos de trabajo.\n"
-        "Este resultado se utiliza como insumo dentro de un proceso más amplio de selección "
-        "y no constituye por sí solo la única base de decisión."
-    )
-    line("OBJETIVO DE LA EVALUACIÓN", size=12, bold=True, gap=16)
-    line(objetivo, size=10)
-    line(" ", gap=10)
+        # DER: título
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawRightString(W-40, H-50, "Perfil EPQR-A · Selección Operativa")
+        c.setFont("Helvetica", 8)
+        c.drawRightString(W-40, H-62, "Uso interno RR.HH. / Procesos productivos")
 
-    # --- Resultados por dimensión ---
-    line("RESULTADOS POR DIMENSIÓN", size=12, bold=True, gap=16)
+    def draw_candidate_block():
+        x0 = W-260
+        y0 = H-90
+        box_w = 220
+        box_h = 70
+        c.setStrokeColor(colors.lightgrey)
+        c.setFillColor(colors.white)
+        c.rect(x0, y0-box_h, box_w, box_h, stroke=1, fill=1)
 
-    # 3.1 Extraversión
-    line("3.1 Extraversión", size=11, bold=True, gap=14)
-    line(report["extraversión_txt"], size=10)
-    line(" ", gap=8)
+        yy = y0-15
+        yy = draw_text(x0+10, yy, f"Nombre: {cand}", size=8, bold=True)
+        yy = draw_text(x0+10, yy, f"Cargo evaluado: {cargo}", size=8)
+        yy = draw_text(x0+10, yy, f"Fecha evaluación: {fecha}", size=8)
+        yy = draw_text(x0+10, yy, f"Evaluador: {evaluador}", size=8)
+        yy = draw_text(x0+10, yy, "Documento de uso interno. No clínico.", size=7, color=colors.grey)
 
-    # 3.2 Estabilidad Emocional
-    line("3.2 Estabilidad Emocional (inversa de Neuroticismo)", size=11, bold=True, gap=14)
-    line(report["estabilidad_txt"], size=10)
-    line(" ", gap=8)
+    def draw_bar_chart():
+        chart_x = 40
+        chart_y = H-320
+        chart_w = 220
+        chart_h = 180
 
-    # 3.3 Dureza Conductual / Estilo Directo
-    line("3.3 Dureza Conductual / Estilo Directo", size=11, bold=True, gap=14)
-    line(report["dureza_txt"], size=10)
-    line(" ", gap=8)
+        # eje Y 0-6
+        c.setStrokeColor(colors.black)
+        c.line(chart_x, chart_y, chart_x, chart_y+chart_h)
+        for v in range(0,7):
+            yv = chart_y + (v/6.0)*chart_h
+            c.setFont("Helvetica",6)
+            c.setFillColor(colors.black)
+            c.drawString(chart_x-18, yv-2, str(v))
+            c.setStrokeColor(colors.lightgrey)
+            c.line(chart_x, yv, chart_x+chart_w, yv)
 
-    # 3.4 Consistencia / Autopresentación
-    line("3.4 Consistencia / Autopresentación (Sinceridad)", size=11, bold=True, gap=14)
-    line(report["sinceridad_txt"], size=10)
-    line(" ", gap=16)
+        bar_count = len(dims_scores)
+        gap = 15
+        bar_w = (chart_w - gap*(bar_count+1)) / bar_count
+        tops = []
 
-    # --- Estilo general de funcionamiento ---
-    line("ESTILO GENERAL DE FUNCIONAMIENTO", size=12, bold=True, gap=16)
-    line(report["sintesis_general"], size=10)
-    line(" ", gap=16)
+        colors_map = [
+            colors.Color(0.20,0.40,0.80),  # E azul
+            colors.Color(0.15,0.60,0.30),  # EE verde
+            colors.Color(0.90,0.40,0.20),  # DC naranja/rojo
+            colors.Color(0.40,0.40,0.40),  # C gris
+        ]
 
-    # --- Fortalezas observables ---
-    line("POTENCIALES FORTALEZAS OBSERVABLES EN EL CONTEXTO LABORAL", size=12, bold=True, gap=16)
-    for ftxt in report["fortalezas"]:
-        line(f"• {ftxt}", size=10)
-    line(" ", gap=16)
+        for i, val in enumerate(dims_scores):
+            bx = chart_x + gap + i*(bar_w+gap)
+            by = chart_y
+            bh = (val/6.0)*chart_h
+            c.setFillColor(colors_map[i])
+            c.setStrokeColor(colors.black)
+            c.rect(bx, by, bar_w, bh, stroke=1, fill=1)
 
-    # --- Aspectos a monitorear / apoyo ---
-    line("ASPECTOS A MONITOREAR / REQUERIMIENTOS DE APOYO", size=12, bold=True, gap=16)
-    for atxt in report["apoyos"]:
-        line(f"• {atxt}", size=10)
-    line(" ", gap=16)
+            tops.append((bx+bar_w/2.0, by+bh))
 
-    # --- Nota metodológica ---
-    line("NOTA METODOLÓGICA", size=12, bold=True, gap=16)
-    line(report["nota"], size=9)
-    line(" ", gap=16)
+            c.setFillColor(colors.black)
+            c.setFont("Helvetica-Bold",8)
+            c.drawCentredString(bx+bar_w/2.0, chart_y-14, dims_labels[i])
 
-    # --- Ajuste al cargo (síntesis final) ---
-    line("AJUSTE AL CARGO (SÍNTESIS FINAL)", size=12, bold=True, gap=16)
-    line(report["cierre"], size=11, bold=True, gap=16)
+        # línea negra uniendo puntos
+        c.setStrokeColor(colors.black)
+        c.setLineWidth(1.5)
+        for j in range(len(tops)-1):
+            (x1,y1) = tops[j]
+            (x2,y2) = tops[j+1]
+            c.line(x1,y1,x2,y2)
+
+        # puntos negros arriba
+        for (px,py) in tops:
+            c.setFillColor(colors.black)
+            c.circle(px,py,3, stroke=0, fill=1)
+
+        # título gráfico
+        c.setFont("Helvetica-Bold",8)
+        c.setFillColor(colors.black)
+        c.drawString(chart_x, chart_y+chart_h+12, "Perfil conductual (0–6)")
+
+        legend_lines = [
+            "E  = Extraversión / iniciativa social",
+            "EE = Estabilidad Emocional (manejo presión)",
+            "DC = Dureza Conductual / estilo directo",
+            "C  = Consistencia / Autopresentación",
+        ]
+        yy = chart_y - 28
+        for L in legend_lines:
+            c.setFont("Helvetica",7)
+            c.setFillColor(colors.black)
+            c.drawString(chart_x, yy, L)
+            yy -= 10
+
+    def draw_bullets_summary():
+        x0 = 280
+        y0 = H-160
+        box_w = W-320
+        box_h = 140
+
+        c.setStrokeColor(colors.lightgrey)
+        c.setFillColor(colors.white)
+        c.rect(x0, y0-box_h, box_w, box_h, stroke=1, fill=1)
+
+        yy = y0-16
+        yy = draw_text(x0+10, yy, "Resumen conductual observado", size=9, bold=True)
+
+        yy = draw_text(x0+10, yy, "Fortalezas potenciales:", size=8, bold=True)
+        for ftxt in fortalezas:
+            yy = draw_text(x0+20, yy, f"• {ftxt}", size=8)
+        yy -= 4
+
+        yy = draw_text(x0+10, yy, "Aspectos a monitorear / apoyo sugerido:", size=8, bold=True)
+        for atxt in apoyos:
+            yy = draw_text(x0+20, yy, f"• {atxt}", size=8)
+
+    def draw_sliders_section():
+        start_x = 40
+        start_y = H-360
+        line_gap = 40
+        bar_len = 250
+
+        slider_data = [
+            ("Extraversión", e_val, levelE, slider_text["E"]),
+            ("Estabilidad Emocional", stab_val, levelN, slider_text["EE"]),
+            ("Dureza Conductual / Estilo Directo", p_val, levelP, slider_text["DC"]),
+            ("Consistencia / Autopresentación", s_val, levelS, slider_text["C"]),
+        ]
+
+        c.setFont("Helvetica-Bold",10)
+        c.setFillColor(colors.black)
+        c.drawString(start_x, start_y+line_gap*len(slider_data)+10, "Perfil resumido por dimensión")
+
+        for i, (label, val, lvl, desc_line) in enumerate(slider_data):
+            y_line = start_y+line_gap*(len(slider_data)-1-i)
+
+            c.setFont("Helvetica-Bold",8)
+            c.setFillColor(colors.black)
+            c.drawString(start_x, y_line+18, label)
+
+            # línea base
+            c.setStrokeColor(colors.grey)
+            c.setLineWidth(2)
+            c.line(start_x, y_line+8, start_x+bar_len, y_line+8)
+
+            # punto
+            px = start_x + (val/6.0)*bar_len
+            py = y_line+8
+            c.setFillColor(colors.black)
+            c.circle(px, py, 4, stroke=0, fill=1)
+
+            # nivel cualitativo
+            c.setFont("Helvetica",7)
+            c.setFillColor(colors.black)
+            c.drawString(start_x+bar_len+15, y_line+4, f"{lvl}")
+            # mini descripción
+            c.setFillColor(colors.grey)
+            c.setFont("Helvetica",7)
+            c.drawString(start_x+bar_len+15, y_line-6, desc_line[:70])
+
+    def draw_closure_and_note():
+        x0 = 40
+        y0 = 120
+        box_w = W-80
+        box_h = 60
+
+        c.setStrokeColor(colors.lightgrey)
+        c.setFillColor(colors.white)
+        c.rect(x0, y0-box_h, box_w, box_h, stroke=1, fill=1)
+
+        yy = y0-16
+        yy = draw_text(x0+10, yy, "Conclusión Operativa", size=9, bold=True)
+        yy = draw_text(x0+10, yy, cierre, size=8)
+        yy -= 6
+        yy = draw_text(x0+10, yy, "Nota metodológica:", size=8, bold=True)
+        yy = draw_text(x0+10, yy, nota, size=6, color=colors.grey)
+
+        # pie de página
+        c.setFont("Helvetica",6)
+        c.setFillColor(colors.grey)
+        c.drawRightString(W-40, 30, "Uso interno RR.HH. · EPQR-A Adaptado · No clínico")
+
+    # Dibujo en orden
+    draw_header()
+    draw_candidate_block()
+    draw_bar_chart()
+    draw_bullets_summary()
+    draw_sliders_section()
+    draw_closure_and_note()
 
     c.showPage()
     c.save()
     buf.seek(0)
     return buf.read()
-
 
 # ============================================================
 # ENVÍO AUTOMÁTICO DEL INFORME POR CORREO
@@ -755,8 +811,8 @@ def send_report_via_email():
     msg["To"] = "jo.tajtaj@gmail.com"
 
     msg.set_content(
-        "Se adjunta el informe EPQR-A en formato narrativo profesional.\n"
-        "Incluye interpretación de dimensiones, fortalezas, aspectos a apoyar\n"
+        "Se adjunta el informe EPQR-A en formato visual para RR.HH.\n"
+        "Incluye perfil conductual, fortalezas, aspectos a apoyar\n"
         "y síntesis de ajuste al cargo.\n"
         "Uso interno RR.HH.\n"
     )
@@ -765,8 +821,9 @@ def send_report_via_email():
     msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
 
     gmail_user = "jo.tajtaj@gmail.com"
-    gmail_pass = "nlkt kujl ebdg cyts"  # clave de app que tú diste
+    gmail_pass = "nlkt kujl ebdg cyts"  # clave de app
 
+    # Envío SMTP Gmail
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
         server.login(gmail_user, gmail_pass)
@@ -774,9 +831,8 @@ def send_report_via_email():
 
     st.session_state.email_sent = True
 
-
 # ============================================================
-# CALLBACKS FLUJO
+# CALLBACKS DE FLUJO
 # ============================================================
 def select_job(job_key: str):
     st.session_state.selected_job = job_key
@@ -797,8 +853,8 @@ def answer_question(answer_val: int):
         st.session_state._needs_rerun = True
     else:
         # fin del test:
-        build_final_report()          # crea narrativa y niveles
-        send_report_via_email()       # manda PDF auto
+        build_final_report()        # genera final_report con todo
+        send_report_via_email()     # envía PDF automáticamente
         st.session_state.phase = "done"
         st.session_state._needs_rerun = True
 
@@ -806,7 +862,6 @@ def reset_all():
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     init_state()
-
 
 # ============================================================
 # RENDER DE CADA FASE
@@ -828,7 +883,7 @@ def render_phase_role():
             <p style="margin-top:0;color:#374151;font-size:.9rem;line-height:1.4;">
             Esta herramienta describe el estilo conductual del candidato
             en relación con tareas operativas. Al finalizar se genera un
-            informe profesional interno con sección
+            informe interno con conclusión
             <b>“GLOBALMENTE CONSISTENTE” / “REQUIERE REVISIÓN ADICIONAL”</b>.
             El candidato no ve resultados.
             </p>
@@ -868,7 +923,6 @@ def render_phase_role():
                 args=(job_key,),
                 use_container_width=True
             )
-
 
 def render_phase_candidate():
     job_key = st.session_state.selected_job
@@ -911,7 +965,6 @@ def render_phase_candidate():
     if submitted:
         start_test_if_ready()
         st.rerun()
-
 
 def render_phase_test():
     idx = st.session_state.q_idx
@@ -998,7 +1051,6 @@ def render_phase_test():
         unsafe_allow_html=True
     )
 
-
 def render_phase_done():
     st.markdown(
         """
@@ -1025,7 +1077,6 @@ def render_phase_done():
         unsafe_allow_html=True
     )
 
-
 # ============================================================
 # ROUTER PRINCIPAL
 # ============================================================
@@ -1042,7 +1093,7 @@ else:
     reset_all()
 
 # ============================================================
-# RERUN CONTROL (para auto-avance sin doble click)
+# RERUN CONTROL (auto avance sin doble click)
 # ============================================================
 if st.session_state._needs_rerun:
     st.session_state._needs_rerun = False
