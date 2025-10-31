@@ -1,5 +1,5 @@
 import streamlit as st
-from typing import Dict
+from typing import Dict, List
 import smtplib
 from email.message import EmailMessage
 from io import BytesIO
@@ -68,28 +68,6 @@ html, body, [data-testid="stAppViewContainer"]{
   background:rgba(255,255,255,.18);
   color:#fff;
   border:1px solid rgba(255,255,255,.4);
-}
-
-.kpi-box{
-  background:#fff;
-  border:1px solid #e5e7eb;
-  border-radius:.75rem;
-  padding:.75rem .9rem;
-  box-shadow:0 10px 20px -6px rgba(0,0,0,.08);
-  margin-bottom:1rem;
-}
-.kpi-label{
-  font-size:.7rem;
-  text-transform:uppercase;
-  letter-spacing:.03em;
-  color:#6b7280;
-  margin-bottom:.25rem;
-}
-.kpi-value{
-  font-size:1.5rem;
-  font-weight:700;
-  color:#111827;
-  line-height:1.2;
 }
 
 .muted{
@@ -167,12 +145,10 @@ html, body, [data-testid="stAppViewContainer"]{
 </style>
 """, unsafe_allow_html=True)
 
-
 # ============================================================
 # PREGUNTAS (30 ÍTEMS) Y CATEGORÍAS
 # ============================================================
 
-# 24 originales + 6 adicionales en la misma línea conductual / emocional.
 QUESTIONS = [
     "¿Tiene con frecuencia subidas y bajadas de su estado de ánimo?",
     "¿Es usted una persona habladora?",
@@ -198,8 +174,6 @@ QUESTIONS = [
     "¿Cree que es mejor seguir las normas de la sociedad que las suyas propias?",
     "¿Las demás personas le consideran muy animado/a?",
     "¿Pone en práctica siempre lo que dice?",
-
-    # Ítems nuevos agregados para llegar a 30
     "¿Pierde la calma fácilmente cuando algo no resulta en el trabajo?",
     "¿Le resulta natural dar instrucciones claras a otras personas?",
     "¿Alguna vez ocultó un error propio para evitar un llamado de atención?",
@@ -208,25 +182,21 @@ QUESTIONS = [
     "¿Le cuesta seguir reglas que considera innecesarias?"
 ]
 
-# Asignamos cada ítem a una dimensión:
-# E = Extraversión / Asertividad social
-# N = Neuroticismo / Inestabilidad emocional
-# P = Psicoticismo / Impulsividad / dureza conductual
-# S = Sinceridad / Apego a normas / deseabilidad social
-#
-# Para mantener coherencia con las 24 primeras, seguimos el mismo mapeo que venías usando
-# y agregamos categorías razonables para las 6 nuevas.
+# Categoría interna asociada a cada pregunta.
+# E = Sociabilidad / Asertividad
+# N = Estabilidad emocional inversa (tensión / nerviosismo)
+# P = Impulsividad / dureza / tolerancia a presión
+# S = Sinceridad / apego a normas / confiabilidad declarada
 CATEGORIES = [
     "N", "E", "P", "E", "S", "P", "S", "P", "N", "S",
     "N", "P", "E", "N", "E", "P", "S", "N", "S", "E",
     "N", "P", "E", "S",
-    # nuevas
-    "N",  # pierde la calma fácilmente -> emocional
-    "E",  # dar instrucciones claras -> extraversión/asertividad
-    "S",  # ocultó error -> sinceridad/adh.normas invertida
-    "N",  # no desconectarse de preocupaciones -> emocional
-    "P",  # cabeza fría en emergencia -> dureza/control impulsivo (lo tratamos tipo P directo)
-    "P",  # saltarse reglas innecesarias -> impulsividad / desafío normas
+    "N",  # pierde la calma
+    "E",  # dar instrucciones
+    "S",  # ocultar error
+    "N",  # no desconectarse
+    "P",  # cabeza fría
+    "P",  # saltarse reglas
 ]
 
 # ============================================================
@@ -276,9 +246,8 @@ JOB_PROFILES = {
 }
 
 # ============================================================
-# ESTADO (SESSION_STATE)
+# ESTADO
 # fases: "role" -> "candidate" -> "test" -> "done"
-# "done" = pantalla final verde SIN mostrar informe
 # ============================================================
 def init_state():
     if "phase" not in st.session_state:
@@ -305,17 +274,16 @@ def init_state():
 init_state()
 
 # ============================================================
-# CÁLCULO DE PUNTAJES Y APTITUD
+# CÁLCULO PSICOMÉTRICO
 # ============================================================
 def compute_scores(answers: Dict[int, int]) -> Dict[str, int]:
     """
     answers[i] = 1 si respondió Sí, 0 si respondió No.
 
-    Regla:
-    - Para E y N sumamos "Sí" (1) directo.
-    - Para P y S seguimos tu lógica anterior: se interpreta que
-      responder "No" (0) suma 1 punto de "control/ajuste", y "Sí" suma 0.
-      Eso penaliza conductas impulsivas o poco sinceras.
+    Para E y N sumamos "Sí" (1).
+    Para P y S usamos tu misma lógica: interpretamos que
+    decir "No" (0) equivale a mejor autocontrol / honestidad,
+    entonces No=1 y Sí=0.
     """
     scores = {"E": 0, "N": 0, "P": 0, "S": 0}
     for idx, cat in enumerate(CATEGORIES):
@@ -331,13 +299,11 @@ def compute_scores(answers: Dict[int, int]) -> Dict[str, int]:
             scores[cat] += ans
     return scores
 
-
 def evaluate_fit_for_job(scores: Dict[str, int], profile: dict):
     """
     Devuelve nivel de ajuste al cargo:
-    - APTO: cumple todos los rangos
-    - RIESGO PARCIAL: sólo 1 desajuste
-    - NO APTO DIRECTO: 2 o más desajustes
+      APTO / RIESGO PARCIAL / NO APTO DIRECTO
+    más las dimensiones que no calzan con el rango.
     """
     req = profile["requirements"]
     issues = []
@@ -346,24 +312,73 @@ def evaluate_fit_for_job(scores: Dict[str, int], profile: dict):
         mn = req[scale]["min"]
         mx = req[scale]["max"]
         if val < mn:
-            issues.append(f"{scale} bajo (mín {mn}, obtuvo {val})")
+            issues.append(f"{scale} bajo respecto al mínimo esperado")
         elif val > mx:
-            issues.append(f"{scale} alto (máx {mx}, obtuvo {val})")
-
+            issues.append(f"{scale} sobre el máximo aceptable")
     if len(issues) == 0:
         level = "APTO"
     elif len(issues) == 1:
         level = "RIESGO PARCIAL"
     else:
         level = "NO APTO DIRECTO"
-
     return {"matchLevel": level, "issues": issues}
 
+# ============================================================
+# PERFIL CUALITATIVO (FORTALEZAS / RIESGOS)
+# ============================================================
+def build_strengths_and_risks(scores: Dict[str, int]) -> Dict[str, List[str]]:
+    """
+    Genera texto tipo 'grilla' para el PDF.
+    NO devolvemos puntajes numéricos, sólo lectura cualitativa.
+    Heurística:
+    - N bajo (0-3) => estabilidad emocional; N alto => riesgo de tensión/ansiedad.
+    - S alto (4-6 aprox) => apego a normas / honestidad; S bajo => riesgo de conductas que evitan responsabilidad.
+    - E más alto => comunicación / visibilidad; E muy bajo => perfil muy reservado.
+    - P intermedio => control bajo presión; P extremo => impulsividad o dureza relacional.
+    """
+    strengths = []
+    risks = []
+
+    N = scores["N"]
+    E = scores["E"]
+    P = scores["P"]
+    S = scores["S"]
+
+    # Estabilidad emocional / tensión (N)
+    if N <= 3:
+        strengths.append("Maneja la presión sin desbordarse fácilmente.")
+    else:
+        risks.append("Podría mostrar tensión emocional o irritabilidad bajo presión operativa.")
+
+    # Apego a normas / honestidad percibida (S)
+    if S >= 4:
+        strengths.append("Muestra apego declarado a normas y estándares formales.")
+        strengths.append("Declara disposición a actuar de forma correcta y transparente.")
+    else:
+        risks.append("Requiere supervisión en cumplimiento estricto de normas y reportabilidad de errores.")
+
+    # Asertividad / comunicación (E)
+    if E >= 3:
+        strengths.append("Puede comunicarse con otros, dar instrucciones o pedir apoyo cuando lo necesita.")
+    else:
+        strengths.append("Perfil más reservado, tiende a trabajar en silencio sin generar conflicto innecesario.")
+        risks.append("Podría no levantar alertas críticas de forma oportuna si algo falla en la línea.")
+
+    # Control conductual / impulsividad / dureza (P)
+    # Nota: aquí no damos números, inferimos cualitativo
+    if 2 <= P <= 5:
+        strengths.append("Muestra tolerancia al estrés operativo y capacidad para actuar en situaciones complejas.")
+    elif P < 2:
+        strengths.append("Tendencia a ser más bien cooperativo y no confrontacional.")
+        risks.append("Puede costarle imponerse o sostener límites frente a conductas inseguras de otros.")
+    else:  # P > 5
+        risks.append("Podría tomar decisiones demasiado directas o arriesgadas sin consultar al supervisor.")
+
+    return {"strengths": strengths, "risks": risks}
 
 def build_final_report():
     """
-    Calcula puntajes, evalúa cargo elegido y también otros cargos.
-    Guarda todo en session_state.final_report.
+    Crea el paquete final sin puntajes explícitos.
     """
     scores = compute_scores(st.session_state.answers)
     st.session_state.scores = scores
@@ -371,8 +386,21 @@ def build_final_report():
     sel_job_key = st.session_state.selected_job
     sel_profile = JOB_PROFILES[sel_job_key]
 
+    # Ajuste al cargo elegido
     fit_selected = evaluate_fit_for_job(scores, sel_profile)
 
+    # Fortalezas / Riesgos cualitativos globales
+    qual = build_strengths_and_risks(scores)
+
+    # Recomendación textual final
+    if fit_selected["matchLevel"] == "APTO":
+        rec_text = "El candidato se considera capacitado para ejercer el cargo seleccionado."
+    elif fit_selected["matchLevel"] == "RIESGO PARCIAL":
+        rec_text = "El candidato presenta aspectos críticos puntuales. Se sugiere verificación adicional en entrevista y en terreno antes de asignar el cargo."
+    else:
+        rec_text = "El candidato no cumple las condiciones conductuales mínimas declaradas para desempeñar el cargo objetivo sin riesgos adicionales."
+
+    # Posibles reubicaciones (sin puntajes)
     all_fits = []
     for key, prof in JOB_PROFILES.items():
         fit = evaluate_fit_for_job(scores, prof)
@@ -381,7 +409,6 @@ def build_final_report():
             "title": prof["title"],
             "desc": prof["desc"],
             "matchLevel": fit["matchLevel"],
-            "issues": fit["issues"],
         })
 
     st.session_state.final_report = {
@@ -389,17 +416,27 @@ def build_final_report():
         "evaluator_email": st.session_state.evaluator_email,
         "selected_job_key": sel_job_key,
         "selected_job_title": sel_profile["title"],
-        "scores": scores,
-        "fit_selected": fit_selected,
-        "all_fits": all_fits,
+        "fit_selected": fit_selected,          # APTO / RIESGO PARCIAL / NO APTO DIRECTO
+        "qual_strengths": qual["strengths"],   # lista de frases
+        "qual_risks": qual["risks"],           # lista de frases
+        "recommendation": rec_text,            # texto final
+        "all_fits": all_fits,                  # sugerencias de ubicación alternativa
     }
 
 # ============================================================
-# GENERAR PDF (para enviar por correo)
+# GENERAR PDF (SOLO TEXTO CUALITATIVO, SIN PUNTAJES)
 # ============================================================
 def generate_pdf_bytes(report: dict) -> bytes:
     """
-    Crea un PDF simple (A4) con los resultados completos.
+    PDF sin puntajes numéricos.
+    Incluye:
+    - Datos candidato
+    - Cargo evaluado
+    - Nivel de ajuste final
+    - Fortalezas observadas
+    - Riesgos / aspectos a vigilar
+    - Recomendación final
+    - Sugerencias de otros cargos potenciales (APTO / RIESGO PARCIAL / NO APTO DIRECTO)
     """
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
@@ -419,45 +456,66 @@ def generate_pdf_bytes(report: dict) -> bytes:
             c.drawString(40, line_y, line)
             line_y -= gap
 
-    write("Informe EPQR-A / Selección Operativa", size=14, bold=True, gap=18)
-    write(f"Candidato: {report['candidate_name']}", size=11, bold=False)
-    write(f"Evaluador: {report['evaluator_email']}", size=11, bold=False)
-    write(f"Cargo evaluado: {report['selected_job_title']}", size=11, bold=False)
+    # Título
+    write("Informe Conductual EPQR-A / Selección Operativa", size=14, bold=True, gap=18)
+
+    # Datos base
+    write(f"Candidato: {report['candidate_name']}", size=11)
+    write(f"Evaluador responsable: {report['evaluator_email']}", size=11)
+    write(f"Cargo evaluado: {report['selected_job_title']}", size=11)
+
     write(" ", gap=10)
 
-    write("Puntajes escalares:", size=12, bold=True, gap=16)
-    scores = report["scores"]
-    write(f"E (Sociabilidad / Asertividad): {scores['E']}")
-    write(f"N (Inestabilidad emocional): {scores['N']}")
-    write(f"P (Impulsividad / Dureza)*: {scores['P']}")
-    write(f"S (Apego a normas / Honestidad percibida)*: {scores['S']}")
-    write("*En P y S una respuesta 'No' suma control/normativa.\n", gap=16)
+    # Resultado global del cargo elegido
+    write("Evaluación del cargo objetivo:", size=12, bold=True, gap=16)
+    write(f"Clasificación final: {report['fit_selected']['matchLevel']}", bold=True)
 
-    fit_sel = report["fit_selected"]
-    write("Evaluación del cargo postulado:", size=12, bold=True, gap=16)
-    write(f"Resultado global: {fit_sel['matchLevel']}", bold=True)
-    if len(fit_sel["issues"]) == 0:
-        write("Observaciones críticas: Ninguna")
-    else:
-        write("Observaciones críticas:", bold=True)
-        for it in fit_sel["issues"]:
+    if report['fit_selected']["issues"]:
+        write("Observaciones relevantes detectadas:", bold=True)
+        for it in report['fit_selected']["issues"]:
             write(f" - {it}")
+    else:
+        write("Sin observaciones críticas adicionales en los ejes evaluados.")
 
     write(" ", gap=10)
-    write("Ajuste potencial en otros cargos productivos:", size=12, bold=True, gap=16)
-    for fit in report["all_fits"]:
-        write(f"- {fit['title']}: {fit['matchLevel']}", bold=True)
-        if fit["issues"]:
-            for it in fit["issues"]:
-                write(f"   · {it}")
-        else:
-            write("   · Sin observaciones críticas")
-        write(f"   Perfil del rol: {fit['desc']}\n")
 
-    write("Notas de uso interno:", size=12, bold=True, gap=16)
+    # Fortalezas
+    write("Fortalezas observadas para el desempeño operacional:", size=12, bold=True, gap=16)
+    if report["qual_strengths"]:
+        for s in report["qual_strengths"]:
+            write(f" • {s}")
+    else:
+        write(" • (Sin fortalezas destacables registradas)")
+
+    write(" ", gap=10)
+
+    # Riesgos
+    write("Aspectos a vigilar / Riesgos potenciales:", size=12, bold=True, gap=16)
+    if report["qual_risks"]:
+        for r in report["qual_risks"]:
+            write(f" • {r}")
+    else:
+        write(" • No se identifican riesgos conductuales relevantes.", bold=False)
+
+    write(" ", gap=10)
+
+    # Recomendación final
+    write("Recomendación final:", size=12, bold=True, gap=16)
+    write(report["recommendation"], bold=False)
+
+    write(" ", gap=10)
+
+    # Alternativas de ubicación laboral (sin puntajes)
+    write("Posible ajuste en otros cargos productivos de la planta:", size=12, bold=True, gap=16)
+    for alt in report["all_fits"]:
+        write(f"- {alt['title']}: {alt['matchLevel']}")
+        write(f"   {alt['desc']}\n")
+
+    write("Notas internas RR.HH.:", size=12, bold=True, gap=16)
     write(
         "Este informe es confidencial. No reemplaza entrevista conductual,\n"
-        "pruebas técnicas ni evaluaciones médicas. Uso exclusivo RR.HH."
+        "observación en terreno, exámenes de salud ocupacional\n"
+        "ni verificación de referencias laborales."
     )
 
     c.showPage()
@@ -466,15 +524,14 @@ def generate_pdf_bytes(report: dict) -> bytes:
     return buf.read()
 
 # ============================================================
-# ENVÍO DE CORREO AUTOMÁTICO CON PDF ADJUNTO
+# ENVÍO DE CORREO AUTOMÁTICO CON PDF
 # ============================================================
 def send_report_via_email(report: dict):
     """
-    Envía automáticamente el PDF a la casilla indicada.
-    Se usa la casilla fija y la clave app que entregaste.
+    Envía automáticamente el PDF generado al correo interno.
     """
     if st.session_state.email_sent:
-        return  # evita mandarlo más de una vez
+        return  # evitamos duplicar envío si se refresca
 
     pdf_bytes = generate_pdf_bytes(report)
 
@@ -486,19 +543,18 @@ def send_report_via_email(report: dict):
     body_lines = [
         f"Candidato: {report['candidate_name']}",
         f"Cargo evaluado: {report['selected_job_title']}",
-        f"Resultado global: {report['fit_selected']['matchLevel']}",
+        f"Clasificación final: {report['fit_selected']['matchLevel']}",
         "",
-        "Se adjunta PDF con detalle completo (puntajes, riesgos, ajuste a otros cargos).",
+        "Se adjunta el informe conductual resumido (fortalezas, riesgos, recomendación final).",
+        "Este PDF NO incluye puntajes numéricos.",
     ]
     msg.set_content("\n".join(body_lines))
 
-    # Adjuntar PDF
     filename = f"EPQRA_{report['candidate_name'].replace(' ','_')}.pdf"
     msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
 
-    # SMTP Gmail (puerto TLS 587)
     gmail_user = "jo.tajtaj@gmail.com"
-    gmail_pass = "nlkt kujl ebdg cyts"  # app password entregada
+    gmail_pass = "nlkt kujl ebdg cyts"  # clave app proporcionada
 
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
@@ -506,7 +562,6 @@ def send_report_via_email(report: dict):
         server.send_message(msg)
 
     st.session_state.email_sent = True
-
 
 # ============================================================
 # CALLBACKS DE FLUJO
@@ -523,23 +578,19 @@ def start_test_if_ready():
 
 def answer_question(answer_val: int):
     """
-    answer_val = 1 (Sí) o 0 (No)
-    Guarda respuesta y avanza automáticamente.
-    Al terminar la última pregunta:
-      - Calcula el informe
-      - Lo guarda en session_state
-      - Envía el correo con el PDF
-      - Cambia a fase "done"
+    Responde Sí (1) o No (0), avanza.
+    En la última pregunta:
+      - arma el informe cualitativo
+      - manda el correo con PDF
+      - cambia a pantalla final "done"
     """
     idx = st.session_state.q_idx
     st.session_state.answers[idx] = answer_val
 
-    # ¿Quedan más preguntas?
     if idx < len(QUESTIONS) - 1:
         st.session_state.q_idx = idx + 1
         st.session_state._needs_rerun = True
     else:
-        # Última pregunta -> generar informe + enviar + pantalla final
         build_final_report()
         send_report_via_email(st.session_state.final_report)
         st.session_state.phase = "done"
@@ -550,11 +601,9 @@ def reset_all():
         del st.session_state[key]
     init_state()
 
-
 # ============================================================
 # RENDER FASES
 # ============================================================
-
 def render_phase_role():
     st.markdown(
         """
@@ -570,9 +619,11 @@ def render_phase_role():
         """
         <div class="card">
             <p style="margin-top:0;color:#374151;font-size:.9rem;line-height:1.4;">
-            Este test clasifica al candidato en <b>APTO</b>,
-            <b>RIESGO PARCIAL</b> o <b>NO APTO DIRECTO</b> según el
-            cargo productivo seleccionado. Se envía informe completo por correo interno.
+            Este test clasifica al candidato en <b>APTO</b>, <b>RIESGO PARCIAL</b>
+            o <b>NO APTO DIRECTO</b> para el cargo de planta seleccionado.
+            Al finalizar, se genera un informe en PDF con fortalezas,
+            riesgos y recomendación final (sin puntajes) y se envía
+            automáticamente al área interna.
             </p>
         </div>
         """,
@@ -611,7 +662,6 @@ def render_phase_role():
                 use_container_width=True
             )
 
-
 def render_phase_candidate():
     job_key = st.session_state.selected_job
     profile = JOB_PROFILES[job_key]
@@ -637,16 +687,14 @@ def render_phase_candidate():
             value=st.session_state.evaluator_email,
             placeholder="nombre@empresa.com"
         )
-
         st.markdown(
             """
             <div class="muted" style="margin-top:.5rem;">
-            Esta información será usada para generar y enviar el informe PDF interno.
+            Estos datos aparecerán en el informe PDF interno.
             </div>
             """,
             unsafe_allow_html=True
         )
-
         submitted = st.form_submit_button(
             "Iniciar Test",
             use_container_width=True
@@ -656,13 +704,11 @@ def render_phase_candidate():
         start_test_if_ready()
         st.rerun()
 
-
 def render_phase_test():
     idx = st.session_state.q_idx
     total = len(QUESTIONS)
     pct = round(((idx + 1) / total) * 100)
 
-    # HEADER
     st.markdown(
         f"""
         <div class="card-header">
@@ -677,7 +723,6 @@ def render_phase_test():
         unsafe_allow_html=True
     )
 
-    # BARRA PROGRESO
     st.markdown(
         f"""
         <div class="card" style="padding-bottom:.75rem;">
@@ -697,7 +742,6 @@ def render_phase_test():
         unsafe_allow_html=True
     )
 
-    # PREGUNTA + BOTONES
     st.markdown(
         f"""
         <div class="card" style="margin-top:1rem;">
@@ -730,7 +774,6 @@ def render_phase_test():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Mensaje confidencial
     st.markdown(
         """
         <div class="card" style="background:#f9fafb;">
@@ -738,8 +781,7 @@ def render_phase_test():
                 <div style="font-size:.8rem;color:#4f46e5;font-weight:600;">⚠ Confidencial</div>
                 <div class="muted" style="font-size:.8rem;">
                     Responda honestamente. Esta evaluación mide estabilidad emocional,
-                    ajuste a normas de seguridad, confiabilidad y autocontrol
-                    bajo presión en ambiente productivo.
+                    apego a normas de seguridad y confiabilidad para el rol.
                 </div>
             </div>
         </div>
@@ -747,9 +789,7 @@ def render_phase_test():
         unsafe_allow_html=True
     )
 
-
 def render_phase_done():
-    # Pantalla final verde y nada más.
     st.markdown(
         """
         <div class="card-header" style="background:linear-gradient(90deg,#10b981 0%,#059669 100%);box-shadow:inset 0 0 30px rgba(255,255,255,.18);">
@@ -774,7 +814,6 @@ def render_phase_done():
         """,
         unsafe_allow_html=True
     )
-
 
 # ============================================================
 # ROUTER PRINCIPAL
