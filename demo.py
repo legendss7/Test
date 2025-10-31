@@ -539,8 +539,8 @@ def send_report_via_email(report: dict):
 
     msg = EmailMessage()
     msg["Subject"] = f"Informe EPQR-A - {report['candidate_name']} - {report['selected_job_title']}"
-    msg["From"] = "jo.tajtaj@gmail.com"
-    msg["To"] = "jo.tajtaj@gmail.com"
+    msg["From"] = "ps.raulvaldes@gmail.com"
+    msg["To"] = "ps.raulvaldes@gmail.com"
 
     msg.set_content(
         "Se adjunta el informe conductual EPQR-A.\n"
@@ -683,7 +683,7 @@ def render_phase_candidate():
         st.session_state.evaluator_email = st.text_input(
             "Correo del evaluador (RR.HH. / Supervisor)",
             value=st.session_state.evaluator_email,
-            placeholder="nombre@empresa.com"
+            placeholder="ps.raulvaldes@gmail.com"
         )
         st.markdown(
             """
@@ -834,4 +834,5 @@ else:
 if st.session_state._needs_rerun:
     st.session_state._needs_rerun = False
     st.rerun()
+
 
