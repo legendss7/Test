@@ -398,7 +398,7 @@ def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
     """
     Tabla "Detalle por dimensión" a ancho completo.
     rows = [
-      { "puntaje":..., "nivel":..., "desc":... },
+      { "dim":..., "puntaje":..., "nivel":..., "desc":... },
       ...
     ]
     Esta versión:
