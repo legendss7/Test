@@ -816,7 +816,11 @@ def generate_pdf(candidate_name,
             yy -= line_height
         yy -= 8
 
- 
+    # footer
+    c.setFont("Helvetica",6)
+    c.setFillColor(colors.grey)
+    c.drawRightString(W-margin_right, 40,
+       
     )
 
     c.showPage()
@@ -1128,5 +1132,3 @@ elif st.session_state.stage == "done":
 if st.session_state._need_rerun:
     st.session_state._need_rerun = False
     st.rerun()
-
-
