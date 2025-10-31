@@ -549,21 +549,30 @@ def generate_pdf_bytes(report: dict) -> bytes:
     - Resumen fortalezas / apoyo
     - Sliders con puntos
     - Conclusión + nota metodológica
+
+    Con posiciones corregidas y ajuste de texto envuelto.
     """
 
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib import colors
+    from io import BytesIO
+
+    # ==== Datos base del reporte ====
     cand = report["candidate"]
     cargo = report["cargo"]
     fecha = report["fecha"]
     evaluador = report["evaluator"]
 
     scores = report["scores_scaled"]  # {"E":x,"N":x,"P":x,"S":x} en 0-6
-    stab_val = 6 - scores["N"]        # Estabilidad Emocional visualizada alto=mejor control
+    # Estabilidad emocional visualizada (más alto = mejor control emocional)
+    stab_val = 6 - scores["N"]
     e_val   = scores["E"]
     p_val   = scores["P"]
     s_val   = scores["S"]
 
     levelE = report["levelE"]
-    levelN = report["levelN"]   # Estabilidad Emocional cualitativa
+    levelN = report["levelN"]   # ya es "Estabilidad Emocional" cualitativa
     levelP = report["levelP"]
     levelS = report["levelS"]
 
@@ -578,11 +587,19 @@ def generate_pdf_bytes(report: dict) -> bytes:
     dims_scores  = [e_val, stab_val, p_val, s_val]  # escala 0–6
     dims_levels  = [levelE, levelN, levelP, levelS]
 
+    # ==== Canvas base ====
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
-    W, H = A4  # ~595x842
+    W, H = A4  # ~595 x 842 puntos aprox.
 
+    # -------------------------------------------------
+    # Helpers
+    # -------------------------------------------------
     def draw_text(x, y, txt, size=9, bold=False, color=colors.black):
+        """
+        Dibuja texto simple SIN wrap, línea por línea (si txt incluye \n).
+        Devuelve el Y final después de escribir.
+        """
         c.setFillColor(color)
         c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
         for line in txt.split("\n"):
@@ -590,55 +607,141 @@ def generate_pdf_bytes(report: dict) -> bytes:
             y -= (size + 2)
         return y
 
+    def wrap_lines(txt, max_width, font_name="Helvetica", font_size=8):
+        """
+        Envuelve un string largo en varias líneas que no excedan max_width (en puntos).
+        Retorna lista de líneas ya envueltas.
+        """
+        words = txt.split()
+        if not words:
+            return [""]
+        lines = []
+        current = words[0]
+        for w in words[1:]:
+            test = current + " " + w
+            if c.stringWidth(test, font_name, font_size) <= max_width:
+                current = test
+            else:
+                lines.append(current)
+                current = w
+        lines.append(current)
+        return lines
+
+    def draw_wrapped_block(x, y, txt, box_width, size=8, bold=False, color=colors.black, leading=2):
+        """
+        Dibuja texto con wrap automático dentro de ancho box_width.
+        Retorna el Y final.
+        """
+        font_name = "Helvetica-Bold" if bold else "Helvetica"
+        c.setFillColor(color)
+        c.setFont(font_name, size)
+        lines = wrap_lines(txt, box_width, font_name, size)
+        for line in lines:
+            c.drawString(x, y, line)
+            y -= (size + leading)
+        return y
+
+    def draw_bullet_list(x, y, bullets, box_width, size=8, leading=2):
+        """
+        Dibuja viñetas con wrap. Cada viñeta parte con '• '.
+        Retorna Y final.
+        """
+        for b in bullets:
+            # primera línea con "• "
+            font_name = "Helvetica"
+            base = "• " + b
+            lines = wrap_lines(base, box_width, font_name, size)
+            c.setFillColor(colors.black)
+            c.setFont(font_name, size)
+            for i, ln in enumerate(lines):
+                c.drawString(x, y, ln)
+                y -= (size + leading)
+            y -= 2  # espacio extra entre bullets
+        return y
+
+    # -------------------------------------------------
+    # LAYOUT COORDS (ajustado para no solaparse)
+    # -------------------------------------------------
+    # Zona superior (header) ocupa hasta ~H-120
+    header_top_y = H - 40      # texto título principal
+    data_box_top_y = H - 100   # caja de datos candidato parte aquí
+
+    # Zona media fila (gráfico barras + resumen) ocupa aprox hasta ~H-330
+    mid_section_top_y = H - 180
+    chart_height = 160
+    chart_top_y = mid_section_top_y         # ~662 aprox
+    chart_bottom_y = chart_top_y - chart_height  # ~502 aprox
+
+    # Zona sliders justo debajo (~H-370 a ~H-500 rango vertical)
+    sliders_block_top_y = chart_bottom_y - 30  # un poco abajo del gráfico
+
+    # Zona conclusión al final (sobre 120 px del fondo)
+    conclusion_block_top_y = 200  # altura fija desde bottom
+    # conclusion ocupará hacia abajo desde y=200 hasta ~60
+
+    # -------------------------------------------------
+    # HEADER IZQUIERDA + TITULO DERECHA
+    # -------------------------------------------------
     def draw_header():
-        # IZQ: logo/brand
+        # IZQ: logo / marca
         c.setFillColor(colors.black)
         c.setFont("Helvetica-Bold", 11)
-        c.drawString(40, H-50, "EMPRESA / LOGO")
+        c.drawString(40, header_top_y, "EMPRESA / LOGO")
         c.setFont("Helvetica", 7)
-        c.drawString(40, H-62, "Evaluación de personalidad ocupacional")
+        c.drawString(40, header_top_y-12, "Evaluación de personalidad ocupacional")
 
         # DER: título
         c.setFillColor(colors.black)
         c.setFont("Helvetica-Bold", 12)
-        c.drawRightString(W-40, H-50, "Perfil EPQR-A · Selección Operativa")
+        c.drawRightString(W-40, header_top_y, "Perfil EPQR-A · Selección Operativa")
         c.setFont("Helvetica", 8)
-        c.drawRightString(W-40, H-62, "Uso interno RR.HH. / Procesos productivos")
+        c.drawRightString(W-40, header_top_y-12, "Uso interno RR.HH. / Procesos productivos")
 
+    # -------------------------------------------------
+    # BLOQUE DATOS DEL CANDIDATO (arriba derecha)
+    # -------------------------------------------------
     def draw_candidate_block():
-        x0 = W-260
-        y0 = H-90
+        x0 = W - 260
+        y0 = data_box_top_y
         box_w = 220
-        box_h = 70
+        box_h = 80
+
         c.setStrokeColor(colors.lightgrey)
         c.setFillColor(colors.white)
-        c.rect(x0, y0-box_h, box_w, box_h, stroke=1, fill=1)
+        c.rect(x0, y0 - box_h, box_w, box_h, stroke=1, fill=1)
 
-        yy = y0-15
+        yy = y0 - 15
         yy = draw_text(x0+10, yy, f"Nombre: {cand}", size=8, bold=True)
         yy = draw_text(x0+10, yy, f"Cargo evaluado: {cargo}", size=8)
         yy = draw_text(x0+10, yy, f"Fecha evaluación: {fecha}", size=8)
         yy = draw_text(x0+10, yy, f"Evaluador: {evaluador}", size=8)
         yy = draw_text(x0+10, yy, "Documento de uso interno. No clínico.", size=7, color=colors.grey)
 
+    # -------------------------------------------------
+    # GRÁFICO DE BARRAS + LÍNEA NEGRA, IZQUIERDA MEDIA
+    # -------------------------------------------------
     def draw_bar_chart():
         chart_x = 40
-        chart_y = H-320
-        chart_w = 220
-        chart_h = 180
+        chart_y_top = chart_top_y          # parte superior del gráfico
+        chart_h = chart_height             # 160
+        chart_y_bottom = chart_y_top - chart_h
+        chart_w = 230
 
-        # eje Y 0-6
+        # Eje Y 0-6
         c.setStrokeColor(colors.black)
-        c.line(chart_x, chart_y, chart_x, chart_y+chart_h)
-        for v in range(0,7):
-            yv = chart_y + (v/6.0)*chart_h
-            c.setFont("Helvetica",6)
+        c.line(chart_x, chart_y_bottom, chart_x, chart_y_top)
+
+        # Líneas horizontales + etiquetas
+        for v in range(0, 7):
+            yv = chart_y_bottom + (v/6.0)*chart_h
+            c.setFont("Helvetica", 6)
             c.setFillColor(colors.black)
             c.drawString(chart_x-18, yv-2, str(v))
             c.setStrokeColor(colors.lightgrey)
             c.line(chart_x, yv, chart_x+chart_w, yv)
 
-        bar_count = len(dims_scores)
+        # Barras
+        bar_count = len(dims_scores)  # 4
         gap = 15
         bar_w = (chart_w - gap*(bar_count+1)) / bar_count
         tops = []
@@ -652,19 +755,22 @@ def generate_pdf_bytes(report: dict) -> bytes:
 
         for i, val in enumerate(dims_scores):
             bx = chart_x + gap + i*(bar_w+gap)
-            by = chart_y
             bh = (val/6.0)*chart_h
+            by = chart_y_bottom
+            # rect
             c.setFillColor(colors_map[i])
             c.setStrokeColor(colors.black)
             c.rect(bx, by, bar_w, bh, stroke=1, fill=1)
 
+            # punto top
             tops.append((bx+bar_w/2.0, by+bh))
 
+            # etiqueta eje x
             c.setFillColor(colors.black)
-            c.setFont("Helvetica-Bold",8)
-            c.drawCentredString(bx+bar_w/2.0, chart_y-14, dims_labels[i])
+            c.setFont("Helvetica-Bold", 8)
+            c.drawCentredString(bx+bar_w/2.0, chart_y_bottom-14, dims_labels[i])
 
-        # línea negra uniendo puntos
+        # Línea negra que une puntos
         c.setStrokeColor(colors.black)
         c.setLineWidth(1.5)
         for j in range(len(tops)-1):
@@ -672,56 +778,74 @@ def generate_pdf_bytes(report: dict) -> bytes:
             (x2,y2) = tops[j+1]
             c.line(x1,y1,x2,y2)
 
-        # puntos negros arriba
+        # Puntos negros arriba
         for (px,py) in tops:
             c.setFillColor(colors.black)
-            c.circle(px,py,3, stroke=0, fill=1)
+            c.circle(px, py, 3, stroke=0, fill=1)
 
-        # título gráfico
-        c.setFont("Helvetica-Bold",8)
+        # Título del gráfico
+        c.setFont("Helvetica-Bold", 8)
         c.setFillColor(colors.black)
-        c.drawString(chart_x, chart_y+chart_h+12, "Perfil conductual (0–6)")
+        c.drawString(chart_x, chart_y_top+12, "Perfil conductual (0–6)")
 
+        # Leyenda a la derecha del gráfico (envuelta)
+        legend_x = chart_x + chart_w + 10
+        legend_y = chart_y_top
+        legend_w = 200
         legend_lines = [
             "E  = Extraversión / iniciativa social",
             "EE = Estabilidad Emocional (manejo presión)",
             "DC = Dureza Conductual / estilo directo",
             "C  = Consistencia / Autopresentación",
         ]
-        yy = chart_y - 28
-        for L in legend_lines:
-            c.setFont("Helvetica",7)
-            c.setFillColor(colors.black)
-            c.drawString(chart_x, yy, L)
-            yy -= 10
 
-    def draw_bullets_summary():
-        x0 = 280
-        y0 = H-160
-        box_w = W-320
-        box_h = 140
+        c.setFont("Helvetica",8)
+        c.setFillColor(colors.black)
+        for L in legend_lines:
+            wrapped = wrap_lines(L, legend_w, "Helvetica", 8)
+            for line in wrapped:
+                c.drawString(legend_x, legend_y, line)
+                legend_y -= (8+2)
+            legend_y -= 2
+
+        # Caja resumen fortalezas / apoyo alineada bajo leyenda
+        box_x = legend_x
+        box_top = legend_y - 10     # un poco bajo la última línea de leyenda
+        box_w = 200
+        box_h = 100                 # altura fija
 
         c.setStrokeColor(colors.lightgrey)
         c.setFillColor(colors.white)
-        c.rect(x0, y0-box_h, box_w, box_h, stroke=1, fill=1)
+        c.rect(box_x, box_top - box_h, box_w, box_h, stroke=1, fill=1)
 
-        yy = y0-16
-        yy = draw_text(x0+10, yy, "Resumen conductual observado", size=9, bold=True)
+        yy = box_top - 12
+        yy = draw_text(box_x+8, yy, "Resumen conductual observado", size=9, bold=True)
 
-        yy = draw_text(x0+10, yy, "Fortalezas potenciales:", size=8, bold=True)
-        for ftxt in fortalezas:
-            yy = draw_text(x0+20, yy, f"• {ftxt}", size=8)
-        yy -= 4
+        # Fortalezas
+        yy = draw_text(box_x+8, yy, "Fortalezas potenciales:", size=8, bold=True)
+        yy = draw_bullet_list(box_x+14, yy, fortalezas, box_w-22, size=8, leading=2)
 
-        yy = draw_text(x0+10, yy, "Aspectos a monitorear / apoyo sugerido:", size=8, bold=True)
-        for atxt in apoyos:
-            yy = draw_text(x0+20, yy, f"• {atxt}", size=8)
+        # Apoyos
+        yy = draw_text(box_x+8, yy, "Aspectos a monitorear / apoyo sugerido:", size=8, bold=True)
+        yy = draw_bullet_list(box_x+14, yy, apoyos, box_w-22, size=8, leading=2)
 
+    # -------------------------------------------------
+    # SLIDERS SECTION (debajo del gráfico completo)
+    # -------------------------------------------------
     def draw_sliders_section():
         start_x = 40
-        start_y = H-360
-        line_gap = 40
-        bar_len = 250
+        # colocamos el bloque de sliders un poco más abajo del chart_bottom_y
+        block_top = sliders_block_top_y  # ~chart_bottom_y-30
+        y_cursor = block_top
+
+        c.setFont("Helvetica-Bold",10)
+        c.setFillColor(colors.black)
+        c.drawString(start_x, y_cursor, "Perfil resumido por dimensión")
+        y_cursor -= 20
+
+        # Config
+        bar_len = 260
+        line_gap = 46  # distancia vertical entre sliders
 
         slider_data = [
             ("Extraversión", e_val, levelE, slider_text["E"]),
@@ -730,71 +854,101 @@ def generate_pdf_bytes(report: dict) -> bytes:
             ("Consistencia / Autopresentación", s_val, levelS, slider_text["C"]),
         ]
 
-        c.setFont("Helvetica-Bold",10)
-        c.setFillColor(colors.black)
-        c.drawString(start_x, start_y+line_gap*len(slider_data)+10, "Perfil resumido por dimensión")
-
-        for i, (label, val, lvl, desc_line) in enumerate(slider_data):
-            y_line = start_y+line_gap*(len(slider_data)-1-i)
-
+        for (label, val, lvl, desc_line) in slider_data:
+            # bloque slider
+            # título
             c.setFont("Helvetica-Bold",8)
             c.setFillColor(colors.black)
-            c.drawString(start_x, y_line+18, label)
+            c.drawString(start_x, y_cursor, label)
 
             # línea base
+            base_y = y_cursor - 10
             c.setStrokeColor(colors.grey)
             c.setLineWidth(2)
-            c.line(start_x, y_line+8, start_x+bar_len, y_line+8)
+            c.line(start_x, base_y, start_x+bar_len, base_y)
 
             # punto
             px = start_x + (val/6.0)*bar_len
-            py = y_line+8
             c.setFillColor(colors.black)
-            c.circle(px, py, 4, stroke=0, fill=1)
+            c.circle(px, base_y, 4, stroke=0, fill=1)
 
-            # nivel cualitativo
+            # etiqueta nivel
             c.setFont("Helvetica",7)
             c.setFillColor(colors.black)
-            c.drawString(start_x+bar_len+15, y_line+4, f"{lvl}")
-            # mini descripción
-            c.setFillColor(colors.grey)
-            c.setFont("Helvetica",7)
-            c.drawString(start_x+bar_len+15, y_line-6, desc_line[:70])
+            c.drawString(start_x+bar_len+12, base_y+2, f"{lvl}")
 
+            # descripción envuelta bajo el slider
+            desc_y = base_y - 10
+            desc_w = bar_len + 120  # ancho disponible hasta la derecha
+            desc_y = draw_wrapped_block(
+                start_x, desc_y,
+                desc_line,
+                desc_w,
+                size=7,
+                bold=False,
+                color=colors.grey,
+                leading=2
+            )
+            # move y_cursor para siguiente slider
+            y_cursor = desc_y - 14
+
+    # -------------------------------------------------
+    # CONCLUSIÓN Y NOTA METODOLÓGICA (bloque final abajo)
+    # -------------------------------------------------
     def draw_closure_and_note():
         x0 = 40
-        y0 = 120
-        box_w = W-80
-        box_h = 60
+        y0 = conclusion_block_top_y
+        box_w = W - 80
+        box_h = 110  # más alto para texto largo
 
         c.setStrokeColor(colors.lightgrey)
         c.setFillColor(colors.white)
-        c.rect(x0, y0-box_h, box_w, box_h, stroke=1, fill=1)
+        c.rect(x0, y0 - box_h, box_w, box_h, stroke=1, fill=1)
 
-        yy = y0-16
+        yy = y0 - 16
         yy = draw_text(x0+10, yy, "Conclusión Operativa", size=9, bold=True)
-        yy = draw_text(x0+10, yy, cierre, size=8)
+        # cierre (wrap)
+        yy = draw_wrapped_block(
+            x0+10, yy,
+            cierre,
+            box_w-20,
+            size=8,
+            bold=False,
+            color=colors.black,
+            leading=2
+        )
         yy -= 6
         yy = draw_text(x0+10, yy, "Nota metodológica:", size=8, bold=True)
-        yy = draw_text(x0+10, yy, nota, size=6, color=colors.grey)
+        yy = draw_wrapped_block(
+            x0+10, yy,
+            nota,
+            box_w-20,
+            size=6,
+            bold=False,
+            color=colors.grey,
+            leading=2
+        )
 
         # pie de página
         c.setFont("Helvetica",6)
         c.setFillColor(colors.grey)
-        c.drawRightString(W-40, 30, "Uso interno RR.HH. · EPQR-A Adaptado · No clínico")
+        c.drawRightString(W-40, 40, "Uso interno RR.HH. · EPQR-A Adaptado · No clínico")
 
-    # Dibujo en orden
+    # -------------------------------------------------
+    # DIBUJO EN ORDEN
+    # -------------------------------------------------
     draw_header()
     draw_candidate_block()
     draw_bar_chart()
-    draw_bullets_summary()
     draw_sliders_section()
     draw_closure_and_note()
 
+    # cerrar página
     c.showPage()
     c.save()
     buf.seek(0)
     return buf.read()
+
 
 # ============================================================
 # ENVÍO AUTOMÁTICO DEL INFORME POR CORREO
@@ -1098,3 +1252,4 @@ else:
 if st.session_state._needs_rerun:
     st.session_state._needs_rerun = False
     st.rerun()
+
