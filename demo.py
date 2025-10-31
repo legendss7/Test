@@ -1,598 +1,523 @@
+# ============================================================
+# Test CPCO - Se enfoca en la personalidad de base del EPQR y el nuevo factor clave: el compromiso organizacional.
+#Operativo + Motivación / Compromiso
+# Evaluación para cargos de producción / operaciones
+
+#
+# Flujo:
+#   1. Seleccionar cargo
+#   2. Datos candidato + correo evaluador
+#   3. Test (30 preguntas Sí/No, una por pantalla, avanza solo)
+#   4. Genera informe PDF interno RR.HH. (sin mostrarlo en pantalla)
+#      - Incluye nueva dimensión M (Motivación / Compromiso con el Puesto)
+#      - Incluye riesgo de rotación temprana
+#   5. Envía el PDF automáticamente por correo al evaluador
+#   6. Pantalla final: "Evaluación finalizada"
+#
+# NOTA:
+# - Este código asume que tu entorno puede hacer envío SMTP (internet saliente permitido).
+# - Usa una cuenta Gmail con App Password (el usuario ya entregó credenciales).
+# - Si lo corres en un entorno sin internet, el envío va a fallar.
+#
+# librerías necesarias:
+#   pip install streamlit reportlab
+#
+# Ejecutar:
+#   streamlit run epqr_operativo.py
+# ============================================================
+
 import streamlit as st
-from typing import Dict
-import smtplib
-from email.message import EmailMessage
-from io import BytesIO
 from datetime import datetime
+from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
+import smtplib
+from email.message import EmailMessage
+import base64
 
 # ============================================================
-# CONFIG GENERAL STREAMLIT
+# CONFIG STREAMLIT
 # ============================================================
 st.set_page_config(
-    page_title="EPQR-A | Evaluación Operativa",
+    page_title="Evaluación EPQR-A Operativa",
     page_icon="🧪",
     layout="centered",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="collapsed"
 )
 
 # ============================================================
-# ESTILOS CSS
+# PREGUNTAS (24 EPQR-A + 6 Motivación/Compromiso = 30)
+# Cada respuesta es SÍ (1) / NO (0)
+#
+# Para las primeras 24 usamos las 4 escalas clásicas:
+#  - E  = Extraversión (6 ítems)
+#  - N  = Neuroticismo (6 ítems) -> luego lo invertimos y reportamos como EE (Estabilidad Emocional)
+#  - P  = Psicoticismo / Dureza Conductual (6 ítems)
+#  - S  = Sinceridad / Autopresentación (6 ítems)
+#
+# Para las nuevas 6:
+#  - M  = Motivación / Compromiso con el Puesto
+#
+# Vamos a mapear cada pregunta a su escala.
+# También marcamos cuáles son "riesgo de fuga" para M.
 # ============================================================
-st.markdown("""
-<style>
-[data-testid="stSidebar"] { display:none !important; }
 
-html, body, [data-testid="stAppViewContainer"]{
-  background: radial-gradient(circle at 20% 20%, #eef2ff 0%, #fff 60%) !important;
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-  color:#111;
-}
-.block-container{
-  max-width:720px;
-  padding-top:1.5rem;
-  padding-bottom:4rem;
-}
-
-.card{
-  background:#ffffff;
-  border:1px solid #e5e7eb;
-  border-radius:1rem;
-  box-shadow:0 24px 48px -12px rgba(0,0,0,.08);
-  padding:1.5rem 1.25rem;
-  margin-bottom:1rem;
-}
-.card-header{
-  background:linear-gradient(90deg,#2563eb 0%,#4f46e5 100%);
-  color:#fff;
-  padding:1rem 1.25rem;
-  border-radius:1rem 1rem 0 0;
-  box-shadow:inset 0 0 30px rgba(255,255,255,.18);
-  text-align:center;
-}
-.card-header h1,
-.card-header h2,
-.card-header h3{
-  margin:0;
-  font-weight:600;
-  line-height:1.2;
-}
-
-.badge-pill{
-  display:inline-block;
-  font-size:.7rem;
-  font-weight:600;
-  line-height:1;
-  padding:.4rem .6rem;
-  border-radius:999px;
-  background:rgba(255,255,255,.18);
-  color:#fff;
-  border:1px solid rgba(255,255,255,.4);
-}
-
-.muted{
-  font-size:.8rem;
-  color:#6b7280;
-  line-height:1.4;
-}
-
-.alt-block{
-  background:#f9fafb;
-  border:1px solid #e5e7eb;
-  border-radius:.75rem;
-  padding:1rem;
-  margin-bottom:.75rem;
-  box-shadow:0 12px 20px -8px rgba(0,0,0,.05);
-}
-.alt-block h4{
-  margin-top:0;
-  margin-bottom:.25rem;
-  font-size:.9rem;
-  line-height:1.3;
-  font-weight:600;
-  color:#111827;
-}
-.alt-block p{
-  margin:0;
-  font-size:.8rem;
-  color:#4b5563;
-  line-height:1.4;
-}
-
-/* Pantalla final gigante */
-.final-big{
-  font-size:clamp(2rem,4vw,3rem);
-  font-weight:800;
-  color:#10b981;
-  text-align:center;
-  line-height:1.2;
-  margin-bottom:1rem;
-}
-.final-sub{
-  font-size:1rem;
-  color:#374151;
-  text-align:center;
-  max-width:500px;
-  margin:0 auto;
-  line-height:1.4;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
-# PREGUNTAS (30 ÍTEMS) Y CATEGORÍAS EPQR-A ADAPTADO
-# ============================================================
 QUESTIONS = [
-    "¿Tiene con frecuencia subidas y bajadas de su estado de ánimo?",
-    "¿Es usted una persona habladora?",
-    "¿Lo pasaría muy mal si viese sufrir a un niño o a un animal?",
-    "¿Es usted más bien animado/a?",
-    "¿Alguna vez ha deseado más ayudarse a sí mismo/a que compartir con otros?",
-    "¿Tomaría drogas que pudieran tener efectos desconocidos o peligrosos?",
-    "¿Ha acusado a alguien alguna vez de hacer algo sabiendo que la culpa era de usted?",
-    "¿Prefiere actuar a su modo en lugar de comportarse según las normas?",
-    "¿Se siente con frecuencia harto/a («hasta la coronilla»)?",
-    "¿Ha cogido alguna vez algo que perteneciese a otra persona (aunque sea un broche o un bolígrafo)?",
-    "¿Se considera una persona nerviosa?",
-    "¿Piensa que el matrimonio está pasado de moda y que se debería suprimir?",
-    "¿Podría animar fácilmente una fiesta o reunión social aburrida?",
-    "¿Es usted una persona demasiado preocupada?",
-    "¿Tiende a mantenerse callado/a (o en un 2° plano) en las reuniones o encuentros sociales?",
-    "¿Cree que la gente dedica demasiado tiempo para asegurarse el futuro mediante ahorros o seguros?",
-    "¿Alguna vez ha hecho trampas en el juego?",
-    "¿Sufre usted de los nervios?",
-    "¿Se ha aprovechado alguna vez de otra persona?",
-    "Cuando está con otras personas, ¿es usted más bien callado/a?",
-    "¿Se siente muy solo/a con frecuencia?",
-    "¿Cree que es mejor seguir las normas de la sociedad que las suyas propias?",
-    "¿Las demás personas le consideran muy animado/a?",
-    "¿Pone en práctica siempre lo que dice?",
-    "¿Pierde la calma fácilmente cuando algo no resulta en el trabajo?",
-    "¿Le resulta natural dar instrucciones claras a otras personas?",
-    "¿Alguna vez ocultó un error propio para evitar un llamado de atención?",
-    "¿Le cuesta desconectarse mentalmente de las preocupaciones?",
-    "¿Siente que puede mantener la cabeza fría en una emergencia?",
-    "¿Le cuesta seguir reglas que considera innecesarias?"
+    # Índices 0..23 = EPQR-A base adaptado (24 preguntas)
+    {"text": "¿Tiene con frecuencia subidas y bajadas de su estado de ánimo?", "cat": "N"},
+    {"text": "¿Es usted una persona habladora?", "cat": "E"},
+    {"text": "¿Lo pasaría muy mal si viese sufrir a un niño o a un animal?", "cat": "P"},
+    {"text": "¿Es usted más bien animado/a?", "cat": "E"},
+    {"text": "¿Alguna vez ha deseado más ayudarse a sí mismo/a que compartir con otros?", "cat": "S"},
+    {"text": "¿Tomaría drogas que pudieran tener efectos desconocidos o peligrosos?", "cat": "P"},
+    {"text": "¿Ha acusado a alguien alguna vez de hacer algo sabiendo que la culpa era de usted?", "cat": "S"},
+    {"text": "¿Prefiere actuar a su modo en lugar de comportarse según las normas?", "cat": "P"},
+    {"text": "¿Se siente con frecuencia harto/a («hasta la coronilla»)?", "cat": "N"},
+    {"text": "¿Ha cogido alguna vez algo que perteneciese a otra persona (aunque sea un broche o un bolígrafo)?", "cat": "S"},
+    {"text": "¿Se considera una persona nerviosa?", "cat": "N"},
+    {"text": "¿Piensa que el matrimonio está pasado de moda y que se debería suprimir?", "cat": "P"},
+    {"text": "¿Podría animar fácilmente una fiesta o reunión social aburrida?", "cat": "E"},
+    {"text": "¿Es usted una persona demasiado preocupada?", "cat": "N"},
+    {"text": "¿Tiende a mantenerse callado/a (o en 2° plano) en las reuniones o encuentros sociales?", "cat": "E"},
+    {"text": "¿Cree que la gente dedica demasiado tiempo para asegurarse el futuro mediante ahorros o seguros?", "cat": "P"},
+    {"text": "¿Alguna vez ha hecho trampas en el juego?", "cat": "S"},
+    {"text": "¿Sufre usted de los nervios?", "cat": "N"},
+    {"text": "¿Se ha aprovechado alguna vez de otra persona?", "cat": "S"},
+    {"text": "Cuando está con otras personas, ¿es usted más bien callado/a?", "cat": "E"},
+    {"text": "¿Se siente muy solo/a con frecuencia?", "cat": "N"},
+    {"text": "¿Cree que es mejor seguir las normas de la sociedad que las suyas propias?", "cat": "P"},
+    {"text": "¿Las demás personas le consideran muy animado/a?", "cat": "E"},
+    {"text": "¿Pone en práctica siempre lo que dice?", "cat": "S"},
+
+    # Índices 24..29 = Motivación / Compromiso con el Puesto (M)
+    # commit-style (Sí=compromiso)
+    {"text": "Si el turno está difícil pero hay que terminar la tarea, ¿usted se queda hasta cerrar el trabajo aunque no se lo pidan directamente?", "cat": "M", "mtype": "commit"},
+    {"text": "¿Le importa que lo vean como alguien 'confiable', más que sólo alguien que viene a marcar tarjeta?", "cat": "M", "mtype": "commit"},
+    {"text": "¿Ha sentido orgullo personal cuando un supervisor reconoce que usted 'sacó la pega' a tiempo sin reclamar?", "cat": "M", "mtype": "commit"},
+    # leaver-style (Sí = riesgo de irse rápido, No = compromiso)
+    {"text": "Si ve que el trabajo no le acomoda en la primera semana, ¿prefiere renunciar al tiro antes que conversarlo con el encargado?", "cat": "M", "mtype": "leaver"},
+    {"text": "Para usted este trabajo es sólo algo temporal hasta que salga algo mejor, aunque no sepa cuánto durará acá.", "cat": "M", "mtype": "leaver"},
+    {"text": "Prefiere cambiarse rápido a otro lugar si las reglas acá no son exactamente como a usted le gustan.", "cat": "M", "mtype": "leaver"},
 ]
 
-# CATEGORÍAS EPQR-A (adaptadas)
-# E = Extraversión / energía social / iniciativa interpersonal
-# N = Neuroticismo → reportaremos como Estabilidad Emocional invertida
-# P = Dureza Conductual / estilo directo / tolerancia a conflicto
-# S = Consistencia / Autopresentación / deseabilidad social
-CATEGORIES = [
-    "N", "E", "S", "E", "S", "P", "S", "P", "N", "S",
-    "N", "P", "E", "N", "E", "P", "S", "N", "S", "E",
-    "N", "P", "E", "S", "N", "E", "S", "N", "P", "P",
-]
-
-DIM_COUNTS = {
-    "E": CATEGORIES.count("E"),
-    "N": CATEGORIES.count("N"),
-    "P": CATEGORIES.count("P"),
-    "S": CATEGORIES.count("S"),
-}
 
 # ============================================================
-# PERFILES DE CARGO Y RANGOS ESPERADOS (0–6)
+# PERFILES DE CARGO (rangos esperados)
+# Trabajamos sobre:
+#   E  = Extraversión (0-6, más alto = más sociable / visible)
+#   EE = Estabilidad Emocional (0-6, más alto = mejor manejo presión)
+#   DC = Dureza Conductual / Estilo Directo (P) (0-6, más alto = más directo/duro)
+#   C  = Consistencia / Autopresentación (S) (0-6, más alto = cuida imagen / norma)
+#   M  = Motivación / Compromiso con el Puesto (0-6, más alto = alta permanencia)
 # ============================================================
+
 JOB_PROFILES = {
     "operario": {
         "title": "Operario de Producción",
-        "requirements": {
-            "E": {"min": 0, "max": 4},
-            "N": {"min": 0, "max": 3},
-            "P": {"min": 0, "max": 5},
-            "S": {"min": 4, "max": 6},
+        "req": {
+            "E":  (0, 4),
+            "EE": (3, 6),
+            "DC": (0, 4),
+            "C":  (3, 6),
+            "M":  (3, 6),
         },
-        "desc": "Ejecución estable y disciplinada. Cumplimiento estricto de normas de seguridad y ritmo constante.",
     },
     "supervisor": {
         "title": "Supervisor Operativo",
-        "requirements": {
-            "E": {"min": 3, "max": 6},
-            "N": {"min": 0, "max": 3},
-            "P": {"min": 2, "max": 5},
-            "S": {"min": 4, "max": 6},
+        "req": {
+            "E":  (3, 6),
+            "EE": (3, 6),
+            "DC": (2, 5),
+            "C":  (3, 6),
+            "M":  (4, 6),
         },
-        "desc": "Coordinación de equipos bajo presión, comunicación clara de instrucciones y control de desvíos.",
     },
     "tecnico": {
         "title": "Técnico de Mantenimiento",
-        "requirements": {
-            "E": {"min": 1, "max": 4},
-            "N": {"min": 0, "max": 3},
-            "P": {"min": 2, "max": 5},
-            "S": {"min": 4, "max": 6},
+        "req": {
+            "E":  (1, 4),
+            "EE": (3, 6),
+            "DC": (2, 5),
+            "C":  (3, 6),
+            "M":  (4, 6),
         },
-        "desc": "Diagnóstico técnico, reacción ante fallas, foco en procedimientos y reporte transparente.",
     },
     "logistica": {
         "title": "Personal de Logística",
-        "requirements": {
-            "E": {"min": 2, "max": 5},
-            "N": {"min": 0, "max": 3},
-            "P": {"min": 1, "max": 4},
-            "S": {"min": 4, "max": 6},
+        "req": {
+            "E":  (2, 6),
+            "EE": (3, 6),
+            "DC": (1, 5),
+            "C":  (3, 6),
+            "M":  (3, 6),
         },
-        "desc": "Movimiento ordenado de insumos, coordinación entre áreas y registro fiable.",
     },
 }
 
-# ============================================================
-# ESTADO GLOBAL DE LA APP
-# phases: "role" -> "candidate" -> "test" -> "done"
-# ============================================================
-def init_state():
-    if "phase" not in st.session_state:
-        st.session_state.phase = "role"
-    if "selected_job" not in st.session_state:
-        st.session_state.selected_job = None
-    if "candidate_name" not in st.session_state:
-        st.session_state.candidate_name = ""
-    if "evaluator_email" not in st.session_state:
-        st.session_state.evaluator_email = ""
-    if "q_idx" not in st.session_state:
-        st.session_state.q_idx = 0
-    if "answers" not in st.session_state:
-        st.session_state.answers = {i: None for i in range(len(QUESTIONS))}
-    if "final_report" not in st.session_state:
-        st.session_state.final_report = None
-    if "_needs_rerun" not in st.session_state:
-        st.session_state._needs_rerun = False
-    if "email_sent" not in st.session_state:
-        st.session_state.email_sent = False
-
-init_state()
 
 # ============================================================
-# CÁLCULO DE PUNTAJES
+# ESTADO GLOBAL STREAMLIT
 # ============================================================
-def compute_raw_scores(answers: Dict[int, int]) -> Dict[str, int]:
+if "stage" not in st.session_state:
+    st.session_state.stage = "select_job"  # select_job -> info -> test -> done
+
+if "selected_job" not in st.session_state:
+    st.session_state.selected_job = None
+
+if "candidate_name" not in st.session_state:
+    st.session_state.candidate_name = ""
+
+if "evaluator_email" not in st.session_state:
+    st.session_state.evaluator_email = ""
+
+if "current_q" not in st.session_state:
+    st.session_state.current_q = 0
+
+if "answers" not in st.session_state:
+    # answers[i] = 1 (Sí) o 0 (No)
+    st.session_state.answers = {i: None for i in range(len(QUESTIONS))}
+
+if "already_sent" not in st.session_state:
+    st.session_state.already_sent = False  # para no reenviar correo si rerun
+
+
+# ============================================================
+# FUNCIONES DE CÁLCULO
+# ============================================================
+
+def compute_trait_scores(answers_dict):
     """
-    EPQR-A binario Sí(1)/No(0).
-    Para P y S interpretamos "No"(0) como control/ajuste normativo → suma 1.
-    Para E y N interpretamos "Sí"(1) como presencia del rasgo → suma 1.
+    Devuelve puntajes crudos (0-6) para E, N, P, S con las primeras 24 preguntas.
+    Lógica:
+     - categories por pregunta (QUESTIONS[i]["cat"])
+     - Para P y S invertimos: Sí (1) cuenta como 0, No (0) como 1
+     - Para E y N: Sí (1) suma 1 tal cual
     """
-    scores = {"E": 0, "N": 0, "P": 0, "S": 0}
-    for idx, cat in enumerate(CATEGORIES):
-        ans = answers.get(idx)
+    scores = {"E":0, "N":0, "P":0, "S":0}
+    for i in range(24):
+        ans = answers_dict.get(i)
         if ans is None:
             continue
-        if cat in ["P", "S"]:
-            val = 1 if ans == 0 else 0
+        cat = QUESTIONS[i]["cat"]  # "E","N","P","S"
+        if cat in ["P","S"]:
+            # invertido: Sí=0, No=1
+            value = 0 if ans == 1 else 1
         else:
-            val = ans
-        scores[cat] += val
-    return scores
+            # E/N suman directo
+            value = ans
+        scores[cat] += value
+    return scores  # cada uno 0..6
 
 
-def scale_scores_to_6(raw_scores: Dict[str, int]) -> Dict[str, int]:
+def compute_commitment_score(answers_dict):
     """
-    Normaliza cada dimensión a escala 0–6 para comparar con rangos por cargo.
-    scaled = round( (raw / max_raw_dim) * 6 )
+    Mide Motivación / Compromiso con el Puesto (M), preguntas 24..29
+    - mtype "commit": Sí=1, No=0
+    - mtype "leaver": Sí=0, No=1
+    total 0..6
     """
-    scaled = {}
-    for dim, raw_val in raw_scores.items():
-        max_dim_items = DIM_COUNTS[dim]
-        scaled_val = round((raw_val / max_dim_items) * 6)
-        scaled[dim] = scaled_val
-    return scaled
+    score = 0
+    for i in range(24, 30):
+        ans = answers_dict.get(i)
+        if ans is None:
+            continue
+        q = QUESTIONS[i]
+        mtype = q.get("mtype", "commit")
+        if mtype == "commit":
+            if ans == 1:  # Sí = compromiso
+                score += 1
+        else:  # leaver/riesgo rotación
+            if ans == 0:  # No = me quedo, baja rotación
+                score += 1
+    return score  # 0..6
 
 
-def level_label_numeric(scaled_val: int) -> str:
+def qualitative_level(score):
     """
-    Pasa valor 0–6 a Bajo / Medio / Alto.
+    Nivel cualitativo genérico Bajo / Medio / Alto.
+    Usaremos:
+     0-2: Bajo
+     3-4: Medio
+     5-6: Alto
     """
-    if scaled_val <= 2:
-        return "Bajo"
-    elif scaled_val <= 4:
+    if score >= 5:
+        return "Alto"
+    elif score >= 3:
         return "Medio"
     else:
-        return "Alto"
+        return "Bajo"
 
 
-def evaluate_fit_for_job(scaled_scores: Dict[str, int], profile: dict):
+def qualitative_commitment(score):
     """
-    Compara con los requisitos del cargo (0–6 por dimensión).
-    Devuelve matchLevel = APTO / RIESGO PARCIAL / NO APTO DIRECTO
-    + match_pct, issues.
+    Para la escala M específica de permanencia.
     """
-    req = profile["requirements"]
-    in_range_count = 0
-    issues = []
-
-    for dim in ["E", "N", "P", "S"]:
-        val = scaled_scores[dim]
-        mn = req[dim]["min"]
-        mx = req[dim]["max"]
-        ok = (val >= mn and val <= mx)
-        if ok:
-            in_range_count += 1
-        else:
-            if val < mn:
-                issues.append(f"{dim}: bajo el rango esperado para {profile['title']}")
-            elif val > mx:
-                issues.append(f"{dim}: sobre el rango esperado para {profile['title']}")
-
-    if in_range_count >= 3:
-        matchLevel = "APTO"
-    elif in_range_count == 2:
-        matchLevel = "RIESGO PARCIAL"
+    if score >= 5:
+        return "Compromiso estable"
+    elif score >= 3:
+        return "Compromiso condicionado"
     else:
-        matchLevel = "NO APTO DIRECTO"
+        return "Riesgo de rotación temprana"
 
-    match_pct = round((in_range_count / 4) * 100)
 
-    return {
-        "matchLevel": matchLevel,
-        "match_pct": match_pct,
-        "issues": issues,
-        "in_range_count": in_range_count,
-    }
-
-# ============================================================
-# DESCRIPTORES CUALITATIVOS
-# ============================================================
-def describe_extraversión(level:str):
-    if level == "Alto":
-        return {
-            "conductual": "mostrarse activo/a socialmente, tomar la palabra y vincularse con otras personas de manera visible",
-            "impacto": "la interacción directa, la comunicación cara a cara y la coordinación verbal",
-            "contexto": "roles donde se requiere presencia frente a otros, dar instrucciones o resolver situaciones con personas en tiempo real",
-        }
-    if level == "Medio":
-        return {
-            "conductual": "adaptar su nivel de interacción según la situación, combinando espacios de colaboración con momentos de trabajo individual",
-            "impacto": "mantener comunicación funcional cuando es necesaria",
-            "contexto": "entornos donde se requieren intercambios puntuales pero también foco operativo",
-        }
-    return {
-        "conductual": "mantener un perfil más reservado y evitar la exposición innecesaria",
-        "impacto": "la concentración en la tarea y el trabajo silencioso",
-        "contexto": "funciones estructuradas, con menor necesidad de interacción social constante",
-    }
-
-def describe_estabilidad(level:str):
-    if level == "Alto":
-        return {
-            "estres": "mantener estabilidad emocional y una respuesta relativamente controlada ante presión o cambio",
-            "impacto": "sostener ritmo en escenarios de alta demanda sin perder foco inmediato",
-            "apoyo": "poca contención adicional en el día a día, salvo en crisis prolongadas",
-        }
-    if level == "Medio":
-        return {
-            "estres": "mostrar cierta inquietud bajo presión, pero recuperarse con apoyos claros y prioridades bien definidas",
-            "impacto": "necesitar claridad operativa cuando hay exigencia sostenida",
-            "apoyo": "beneficiarse de instrucciones directas cuando hay cambios bruscos",
-        }
-    return {
-        "estres": "experimentar preocupación con mayor intensidad en escenarios de mucha presión",
-        "impacto": "requerir contención verbal, validación rápida o acompañamiento cercano cuando hay urgencia prolongada",
-        "apoyo": "beneficiarse de retroalimentación calmada y pasos concretos",
-    }
-
-def describe_dureza(level:str):
-    if level == "Alto":
-        return {
-            "interpersonal": "expresarse de manera directa y enfocada en la tarea, con baja tolerancia a distracciones",
-            "prioriza": "el resultado operativo y el cumplimiento inmediato",
-            "conflicto": "tomar decisiones rápidas incluso si hay desacuerdo",
-            "funcional": "ambientes en que se requiere firmeza para sostener estándares de producción o seguridad",
-            "sensibilidad": "equipos que esperan acompañamiento emocional constante",
-        }
-    if level == "Medio":
-        return {
-            "interpersonal": "equilibrar franqueza con cierta lectura del entorno",
-            "prioriza": "cumplimiento operativo sin generar fricción innecesaria",
-            "conflicto": "marcar límites cuando es necesario, pero con disposición a coordinar",
-            "funcional": "contextos donde se requiere foco en resultados pero también trabajo en equipo",
-            "sensibilidad": "modelos muy rígidos o demasiado confrontativos",
-        }
-    return {
-        "interpersonal": "mantener un estilo más cooperativo y de baja confrontación directa",
-        "prioriza": "la relación interpersonal y la reducción de tensiones",
-        "conflicto": "evitar choques abiertos y preferir acuerdos",
-        "funcional": "equipos colaborativos que valoran trato diplomático",
-        "sensibilidad": "escenarios que exigen frenar conductas de otros con firmeza inmediata",
-    }
-
-def describe_sinceridad(level:str):
-    if level == "Alto":
-        return {
-            "transparencia": "responder de manera consistente con normas formales y expectativas de la organización",
-            "imagen": "cuida activamente la forma en que se muestra frente a figuras de autoridad",
-        }
-    if level == "Medio":
-        return {
-            "transparencia": "presentarse de forma razonablemente directa, ajustando el discurso según contexto",
-            "imagen": "busca quedar bien evaluado sin forzar demasiado la autoimagen",
-        }
-    return {
-        "transparencia": "entregar respuestas más espontáneas y menos filtradas socialmente",
-        "imagen": "muestra menor esfuerzo explícito por gestionar la impresión que genera",
-    }
-
-# ============================================================
-# RESUMENES BULLETS
-# ============================================================
-def build_strength_bullets(levelE, levelN, levelP, levelS):
-    out = []
-    if levelE in ["Alto", "Medio"]:
-        out.append("Disposición a comunicarse de manera clara frente a otras personas cuando la tarea lo requiere.")
-    else:
-        out.append("Capacidad para mantener foco individual en la tarea sin necesidad de alta interacción social.")
-    if levelN in ["Alto", "Medio"]:
-        out.append("Tendencia a sostener el ritmo de trabajo en escenarios de presión operativa inmediata.")
-    else:
-        out.append("Capacidad para identificar rápidamente cuando una situación le resulta demandante y pedir apoyo.")
-    if levelP in ["Alto", "Medio"]:
-        out.append("Capacidad para marcar prioridades operativas y sostener criterios de cumplimiento.")
-    else:
-        out.append("Preferencia por resolver diferencias mediante diálogo y acuerdos antes que confrontación directa.")
-    if levelS in ["Alto", "Medio"]:
-        out.append("Orientación a cumplir normas formales y protocolos establecidos.")
-    else:
-        out.append("Estilo espontáneo que puede facilitar conversaciones francas en terreno.")
-    out.append("Tendencia a mantener la tarea como eje central del desempeño diario.")
-    return out[:5]
-
-def build_support_bullets(levelE, levelN, levelP, levelS):
-    out = []
-    if levelN == "Bajo":
-        out.append("Podría requerir contención breve y recordatorios concretos en escenarios de alta urgencia sostenida.")
-    if levelP == "Alto":
-        out.append("Se sugiere acordar normas explícitas de comunicación para evitar que su estilo directo sea percibido como confrontacional.")
-    elif levelP == "Bajo":
-        out.append("Podría beneficiarse de apoyo para sostener límites firmes cuando otras personas no cumplen estándares operativos.")
-    if levelE == "Bajo":
-        out.append("Puede requerir que se valide explícitamente su voz en reuniones, para que comunique incidentes críticos a tiempo.")
-    if levelS == "Alto":
-        out.append("Se sugiere retroalimentación directa y específica, ya que la persona puede tender a responder según lo socialmente esperado.")
-    if not out:
-        out.append("Podría requerir retroalimentación clara y temprana cuando cambian prioridades de forma brusca.")
-    return out[:4]
-
-# ============================================================
-# ARMAR INFORME NARRATIVO + RESUMEN PARA PDF
-# ============================================================
-def build_final_report():
-    answers = st.session_state.answers
-    candidate = st.session_state.candidate_name
-    evaluator = st.session_state.evaluator_email
-    cargo_key = st.session_state.selected_job
-    cargo_title = JOB_PROFILES[cargo_key]["title"]
-    fecha_eval = datetime.now().strftime("%d/%m/%Y %H:%M")
-
-    raw_scores = compute_raw_scores(answers)
-    scaled_scores = scale_scores_to_6(raw_scores)
-
-    # niveles cualitativos por dimensión
-    levelE = level_label_numeric(scaled_scores["E"])
-    levelN_stability = level_label_numeric(6 - scaled_scores["N"])  # Estabilidad emocional
-    levelP = level_label_numeric(scaled_scores["P"])
-    levelS = level_label_numeric(scaled_scores["S"])
-
-    # descripciones conductuales
-    dE = describe_extraversión(levelE)
-    dN = describe_estabilidad(levelN_stability)
-    dP = describe_dureza(levelP)
-    dS = describe_sinceridad(levelS)
-
-    # ajuste con el cargo
-    fit_info = evaluate_fit_for_job(scaled_scores, JOB_PROFILES[cargo_key])
-
-    if fit_info["matchLevel"] == "APTO":
-        cierre_final = (
-            f"Conclusión: El perfil evaluado se considera GLOBALMENTE CONSISTENTE "
-            f"con las exigencias conductuales habituales del cargo {cargo_title}."
+def build_slider_texts(e_val, stab_val, p_val, s_val, m_val):
+    """
+    Texto breve explicativo que aparecerá en el PDF bajo cada slider.
+    """
+    # Extraversión
+    if e_val >= 4:
+        text_E = (
+            "Muestra iniciativa social, comodidad para interactuar y comunicar "
+            "directamente necesidades operativas frente a otros."
+        )
+    elif e_val >= 2:
+        text_E = (
+            "Se relaciona con otras personas de forma funcional. Puede interactuar "
+            "cuando la tarea lo requiere, sin necesidad de mucha exposición."
         )
     else:
-        cierre_final = (
-            f"Conclusión: El perfil evaluado REQUIERE REVISIÓN ADICIONAL antes de confirmar "
-            f"idoneidad para el cargo {cargo_title}. Se sugiere profundizar en entrevista "
-            f"focalizada y verificación de referencias."
+        text_E = (
+            "Prefiere entornos más tranquilos, con menor demanda de visibilidad o "
+            "exposición constante frente a grupos."
         )
 
-    fortalezas = build_strength_bullets(levelE, levelN_stability, levelP, levelS)
-    apoyos     = build_support_bullets(levelE, levelN_stability, levelP, levelS)
+    # Estabilidad Emocional (stab_val = 6 - N)
+    if stab_val >= 4:
+        text_EE = (
+            "Tiende a manejar la presión de forma controlada, manteniendo foco en la tarea "
+            "ante exigencias o cambios."
+        )
+    elif stab_val >= 2:
+        text_EE = (
+            "Frente a presión intensa puede requerir contención o instrucciones claras, "
+            "pero generalmente continúa cumpliendo."
+        )
+    else:
+        text_EE = (
+            "Puede experimentar preocupación intensa en escenarios de urgencia o conflicto. "
+            "Podría necesitar apoyo cercano en picos de demanda."
+        )
 
-    nota_metodologica = (
-        "Este informe se basa en la auto-respuesta declarada por la persona evaluada en el "
-        "Cuestionario EPQR-A. Los resultados describen tendencias y preferencias conductuales "
-        "observadas en el momento de la evaluación. No constituyen un diagnóstico clínico ni, "
-        "por sí solos, una determinación absoluta de idoneidad laboral. Se recomienda "
-        "complementar esta información con entrevista estructurada, verificación de "
-        "experiencia y evaluación técnica del cargo."
-    )
+    # Dureza Conductual / Estilo Directo (P)
+    if p_val >= 4:
+        text_DC = (
+            "Estilo comunicacional directo y orientado a cumplir la tarea incluso en tensión. "
+            "Puede priorizar resultados por sobre la diplomacia."
+        )
+    elif p_val >= 2:
+        text_DC = (
+            "Equilibra cumplimiento y relación interpersonal. Puede sostener una instrucción "
+            "firme cuando es necesario."
+        )
+    else:
+        text_DC = (
+            "Prefiere evitar confrontaciones abiertas. Tiende a mantener el orden sin "
+            "entrar en choques directos."
+        )
 
-    # descripción breve para sliders
-    slider_text = {
-        "E":  f"{levelE} / interacción social y toma de iniciativa",
-        "EE": f"{levelN_stability} / manejo de presión y control emocional",
-        "DC": f"{levelP} / estilo directo y foco en resultado",
-        "C":  f"{levelS} / consistencia y alineación a normas",
+    # Consistencia / Autopresentación (S)
+    if s_val >= 4:
+        text_C = (
+            "Declara intención de actuar según lo esperado, cumplir normas y mantener "
+            "una imagen responsable ante jefaturas."
+        )
+    elif s_val >= 2:
+        text_C = (
+            "Cuida razonablemente la forma en que es percibido, buscando mostrarse "
+            "cumplidor/a y correcto/a ante los demás."
+        )
+    else:
+        text_C = (
+            "Podría priorizar su propio criterio incluso si percibe que la norma formal "
+            "es distinta, lo que requiere alineación explícita."
+        )
+
+    # Motivación / Compromiso con el Puesto (M)
+    if m_val >= 5:
+        text_M = (
+            "Manifiesta alto sentido de permanencia y compromiso operativo. "
+            "Baja probabilidad de rotación temprana si el trato es justo."
+        )
+    elif m_val >= 3:
+        text_M = (
+            "Su permanencia está condicionada a percibir orden, claridad y trato directo. "
+            "Tiende a quedarse si siente respeto y coherencia."
+        )
+    else:
+        text_M = (
+            "Declara disposición a salir rápidamente si el entorno no se ajusta "
+            "a sus expectativas iniciales. Riesgo de rotación temprana."
+        )
+
+    return {
+        "E": text_E,
+        "EE": text_EE,
+        "DC": text_DC,
+        "C": text_C,
+        "M": text_M,
     }
 
-    # guardamos todo
-    st.session_state.final_report = {
-        "candidate": candidate,
-        "cargo": cargo_title,
-        "fecha": fecha_eval,
-        "evaluator": evaluator,
 
-        "scores_scaled": scaled_scores,           # numérico 0–6 por dimensión
-        "levelE": levelE,
-        "levelN": levelN_stability,               # Estabilidad emocional ya invertida
-        "levelP": levelP,
-        "levelS": levelS,
+def build_strengths_and_risks(e_val, stab_val, p_val, s_val, m_val):
+    fortalezas = []
+    apoyos = []
 
-        "fortalezas": fortalezas,
-        "apoyos": apoyos,
+    # Fortalezas
+    if e_val >= 4:
+        fortalezas.append(
+            "Disposición a comunicarse de manera clara frente a otras personas cuando la tarea lo requiere."
+        )
+    if stab_val >= 4:
+        fortalezas.append(
+            "Capacidad de sostener el foco en la tarea bajo presión operativa."
+        )
+    if p_val >= 4:
+        fortalezas.append(
+            "Tendencia a marcar prioridades operativas y sostener criterios de cumplimiento."
+        )
+    if s_val >= 4:
+        fortalezas.append(
+            "Cuidado por la imagen de cumplimiento y responsabilidad frente a supervisión."
+        )
+    if m_val >= 5:
+        fortalezas.append(
+            "Alta declaración de compromiso con el puesto y baja intención de rotación temprana."
+        )
 
-        "slider_text": slider_text,
-        "cierre": cierre_final,
-        "nota": nota_metodologica,
+    # Apoyos / a monitorear
+    if stab_val <= 2:
+        apoyos.append(
+            "Podría requerir contención directa o recordatorios concretos cuando hay presión sostenida o conflicto interpersonal."
+        )
+    if p_val >= 4:
+        apoyos.append(
+            "Su estilo directo puede percibirse como confrontacional; se sugiere acordar reglas claras de comunicación en el equipo."
+        )
+    if m_val <= 2:
+        apoyos.append(
+            "Manifiesta disposición a abandonar el rol tempranamente si no percibe ajuste inmediato; conviene seguimiento inicial cercano."
+        )
+
+    # fallback por si quedaron vacías
+    if not fortalezas:
+        fortalezas.append(
+            "Presenta fortalezas funcionales al rol y disposición a cumplir instrucciones operativas."
+        )
+    if not apoyos:
+        apoyos.append(
+            "Se sugiere acompañamiento inicial estándar en inducción y validación de expectativas de rol."
+        )
+
+    return fortalezas, apoyos
+
+
+def commitment_summary_line(m_val):
+    if m_val >= 5:
+        return (
+            "Desde la perspectiva de motivación y permanencia, el perfil declara alta "
+            "disposición a sostener el puesto y baja intención de rotación temprana."
+        )
+    elif m_val >= 3:
+        return (
+            "En términos de permanencia, el perfil muestra compromiso condicionado: "
+            "tiende a permanecer si percibe trato justo, reglas claras y coherencia operativa."
+        )
+    else:
+        return (
+            "El perfil sugiere riesgo de rotación temprana: declara preferencia por "
+            "cambiarse de puesto rápidamente si las condiciones iniciales no calzan "
+            "con sus expectativas."
+        )
+
+
+def match_job_requirements(job_key, e_val, stab_val, p_val, s_val, m_val):
+    """
+    Devuelve ("GLOBALMENTE CONSISTENTE..." / "REQUIERE REVISIÓN ADICIONAL...")
+    comparando cada dimensión con el rango del perfil del cargo.
+    """
+    req = JOB_PROFILES[job_key]["req"]
+    # EE = Estabilidad emocional (stab_val)
+    # DC = p_val
+    # C  = s_val
+    # M  = m_val
+
+    checks = {
+        "E":  e_val,
+        "EE": stab_val,
+        "DC": p_val,
+        "C":  s_val,
+        "M":  m_val,
     }
 
+    ok_all = True
+    for dim_key, (mn, mx) in req.items():
+        if not (checks[dim_key] >= mn and checks[dim_key] <= mx):
+            ok_all = False
+            break
+
+    if ok_all:
+        return (
+            "Conclusión: El perfil evaluado se considera GLOBALMENTE CONSISTENTE "
+            f"con las exigencias conductuales habituales del cargo {JOB_PROFILES[job_key]['title']}."
+        )
+    else:
+        return (
+            "Conclusión: El perfil evaluado REQUIERE REVISIÓN ADICIONAL antes de confirmar "
+            f"idoneidad para el cargo {JOB_PROFILES[job_key]['title']}. Se sugiere profundizar "
+            "en entrevista focalizada y verificación de referencias."
+        )
+
+
 # ============================================================
-# GENERAR PDF ESTILO DISC / PERFIL VISUAL
+# PDF GENERATOR
+# (versión seccionada en 3 bloques para evitar traslapes)
+# Incluye ahora la dimensión M como quinto slider
 # ============================================================
+
 def generate_pdf_bytes(report: dict) -> bytes:
     """
-    Genera PDF estilo EPQR-A operativo, ahora con layout rígido por secciones
-    para evitar traslapes:
-      1. Fila superior (gráfico izquierda + info derecha)
-      2. Sliders por dimensión
-      3. Conclusión / nota metodológica
+    Genera PDF en estilo operativo:
+    - Fila superior (gráfico 4 barras + info derecha)
+    - Sliders (ahora con 5 dimensiones incl. M)
+    - Cierre con conclusión y nota metodológica
     """
-
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
-    from reportlab.lib import colors
-    from io import BytesIO
-
-    # ===== Datos base =====
     cand       = report["candidate"]
     cargo      = report["cargo"]
     fecha      = report["fecha"]
     evaluador  = report["evaluator"]
 
-    scores     = report["scores_scaled"]  # {"E":x,"N":x,"P":x,"S":x} en 0-6
-    stab_val   = 6 - scores["N"]          # Estabilidad emocional invertida
-    e_val      = scores["E"]
-    p_val      = scores["P"]
-    s_val      = scores["S"]
+    e_val      = report["scores_final"]["E"]      # 0..6
+    stab_val   = report["scores_final"]["EE"]     # 0..6 (6-N)
+    p_val      = report["scores_final"]["DC"]     # 0..6
+    s_val      = report["scores_final"]["C"]      # 0..6
+    m_val      = report["scores_final"]["M"]      # 0..6
 
-    levelE     = report["levelE"]
-    levelN     = report["levelN"]   # cualitativo ya invertido
-    levelP     = report["levelP"]
-    levelS     = report["levelS"]
+    levelE     = report["levels"]["E"]
+    levelN     = report["levels"]["EE"]           # nombre ya invertido
+    levelP     = report["levels"]["DC"]
+    levelS     = report["levels"]["C"]
+    levelM     = report["levels"]["M"]
 
-    fortalezas = report["fortalezas"][:3]
-    apoyos     = report["apoyos"][:2]
+    fortalezas = report["fortalezas"]
+    apoyos     = report["apoyos"]
 
     slider_text = report["slider_text"]
     cierre      = report["cierre"]
     nota        = report["nota"]
 
-    # Dimensiones resumidas
+    # Para la gráfica de barras de la fila superior
     dims_labels  = ["E", "EE", "DC", "C"]
-    dims_scores  = [e_val, stab_val, p_val, s_val]    # en escala 0–6
+    dims_scores  = [e_val, stab_val, p_val, s_val]
     dims_levels  = [levelE, levelN, levelP, levelS]
 
-    # ===== lienzo PDF =====
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
-    W, H = A4  # ~595 x 842
+    W, H = A4  # aprox 595x842
 
-    # ===== Helpers =====
+    # ---------- Helpers internos PDF ----------
+
     def draw_text(x, y, txt, size=9, bold=False, color=colors.black, leading_extra=2):
-        """
-        Dibuja texto sin wrap (salto manual con \n). Retorna Y final.
-        """
         c.setFillColor(color)
         c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
         for line in txt.split("\n"):
@@ -601,29 +526,23 @@ def generate_pdf_bytes(report: dict) -> bytes:
         return y
 
     def wrap_lines(txt, max_width, font_name="Helvetica", font_size=8):
-        """
-        Parte un texto largo en varias líneas que no excedan max_width.
-        """
         words = txt.split()
         if not words:
             return [""]
         lines = []
-        current = words[0]
+        cur = words[0]
         for w in words[1:]:
-            test = current + " " + w
+            test = cur + " " + w
             if c.stringWidth(test, font_name, font_size) <= max_width:
-                current = test
+                cur = test
             else:
-                lines.append(current)
-                current = w
-        lines.append(current)
+                lines.append(cur)
+                cur = w
+        lines.append(cur)
         return lines
 
     def draw_wrapped_block(x, y, txt, box_width, size=8, bold=False,
                            color=colors.black, leading=2):
-        """
-        Dibuja texto con wrap dentro de un ancho definido. Retorna Y final.
-        """
         font_name = "Helvetica-Bold" if bold else "Helvetica"
         c.setFillColor(color)
         c.setFont(font_name, size)
@@ -634,9 +553,6 @@ def generate_pdf_bytes(report: dict) -> bytes:
         return y
 
     def draw_bullet_list(x, y, bullets, box_width, size=8, leading=2):
-        """
-        Lista con viñetas, con wrap de cada viñeta.
-        """
         for b in bullets:
             base = "• " + b
             lines = wrap_lines(base, box_width, "Helvetica", size)
@@ -648,39 +564,27 @@ def generate_pdf_bytes(report: dict) -> bytes:
             y -= 2
         return y
 
-    # ============================================================
-    # SECCIÓN 1: FILA SUPERIOR
-    # - Gráfico IZQ en caja fija
-    # - Info DERECHA (datos candidato + leyenda + fortalezas)
-    #
-    # Esta sección ocupará verticalmente aprox y ∈ [840..520]
-    # ============================================================
-
-    # --- HEADER (arriba a la izquierda / derecha)
+    # ---------- BLOQUE 1: fila superior ----------
     def draw_header_block():
-        top_y = H - 40  # ~802
-        # Izquierda: "logo"
+        top_y = H - 40
         c.setFillColor(colors.black)
         c.setFont("Helvetica-Bold", 11)
         c.drawString(40, top_y, "EMPRESA / LOGO")
         c.setFont("Helvetica", 7)
         c.drawString(40, top_y-12, "Evaluación de personalidad ocupacional")
 
-        # Derecha: título
         c.setFillColor(colors.black)
         c.setFont("Helvetica-Bold", 12)
         c.drawRightString(W-40, top_y, "Perfil EPQR-A · Selección Operativa")
         c.setFont("Helvetica", 8)
-        c.drawRightString(W-40, top_y-12, "Uso interno RR.HH. / Procesos productivos")
+        c.drawRightString(W-40, top_y-12,
+                          "Uso interno RR.HH. / Procesos productivos")
 
-    # --- CUADRO DATOS DEL CANDIDATO (arriba derecha bajo header)
     def draw_candidate_box():
-        # Caja en la columna derecha, parte alta
-        x0 = 330          # anclamos la col derecha desde x=330
-        y0 = H - 90       # aprox 752
+        x0 = 330
+        y0 = H - 90
         box_w = 230
         box_h = 80
-
         c.setStrokeColor(colors.lightgrey)
         c.setFillColor(colors.white)
         c.rect(x0, y0 - box_h, box_w, box_h, stroke=1, fill=1)
@@ -690,39 +594,35 @@ def generate_pdf_bytes(report: dict) -> bytes:
         yy = draw_text(x0+10, yy, f"Cargo evaluado: {cargo}", size=8)
         yy = draw_text(x0+10, yy, f"Fecha evaluación: {fecha}", size=8)
         yy = draw_text(x0+10, yy, f"Evaluador: {evaluador}", size=8)
-        yy = draw_text(x0+10, yy, "Documento de uso interno. No clínico.",
+        yy = draw_text(x0+10, yy,
+                       "Documento de uso interno. No clínico.",
                        size=7, color=colors.grey)
 
-    # --- GRÁFICO DE BARRAS (izquierda)
     def draw_bar_chart_with_scores():
-        # Vamos a fijar este bloque para que no choque con nada:
-        # lo ubicamos a la izquierda, arrancando más abajo que el header.
         chart_x        = 40
-        chart_y_top    = H - 140   # ~702 px arriba
+        chart_y_top    = H - 140
         chart_h        = 160
         chart_y_bottom = chart_y_top - chart_h
         chart_w        = 250
 
-        # Eje Y
+        # Eje Y + grid
         c.setStrokeColor(colors.black)
         c.setLineWidth(1)
         c.line(chart_x, chart_y_bottom, chart_x, chart_y_top)
 
-        # Líneas horizontales + marcas 0..6
         for v in range(0, 7):
-            yv = chart_y_bottom + (v/6.0) * chart_h
+            yv = chart_y_bottom + (v/6.0)*chart_h
             c.setFont("Helvetica", 6)
             c.setFillColor(colors.black)
             c.drawString(chart_x-18, yv-2, str(v))
             c.setStrokeColor(colors.lightgrey)
             c.line(chart_x, yv, chart_x+chart_w, yv)
 
-        # Barras
         bar_count = len(dims_scores)  # 4
         gap = 18
         bar_w = (chart_w - gap*(bar_count+1)) / bar_count
         tops = []
-        colors_map = [
+        color_map = [
             colors.Color(0.20,0.40,0.80),  # E
             colors.Color(0.15,0.60,0.30),  # EE
             colors.Color(0.90,0.40,0.20),  # DC
@@ -735,24 +635,24 @@ def generate_pdf_bytes(report: dict) -> bytes:
             by = chart_y_bottom
 
             # barra
-            c.setFillColor(colors_map[i])
+            c.setFillColor(color_map[i])
             c.setStrokeColor(colors.black)
             c.rect(bx, by, bar_w, bh, stroke=1, fill=1)
 
-            # punto top
+            # punto tope
             tops.append((bx+bar_w/2.0, by+bh))
 
-            # etiqueta de la dimensión (E / EE / DC / C)
+            # etiqueta eje X
             c.setFillColor(colors.black)
             c.setFont("Helvetica-Bold", 8)
             c.drawCentredString(bx+bar_w/2.0, chart_y_bottom-18, dims_labels[i])
 
-            # puntaje y nivel bajo la etiqueta
-            score_label = f"{dims_scores[i]}/6  {dims_levels[i]}"
+            # puntaje / nivel
+            label_line = f"{val}/6  {dims_levels[i]}"
             c.setFont("Helvetica", 7)
-            c.drawCentredString(bx+bar_w/2.0, chart_y_bottom-30, score_label)
+            c.drawCentredString(bx+bar_w/2.0, chart_y_bottom-30, label_line)
 
-        # Línea negra que une los puntos
+        # línea negra uniendo puntos
         c.setStrokeColor(colors.black)
         c.setLineWidth(1.5)
         for j in range(len(tops)-1):
@@ -760,81 +660,76 @@ def generate_pdf_bytes(report: dict) -> bytes:
             (x2,y2) = tops[j+1]
             c.line(x1,y1,x2,y2)
 
-        # puntos negros en la parte superior
+        # puntos negros
         for (px,py) in tops:
             c.setFillColor(colors.black)
             c.circle(px, py, 3, stroke=0, fill=1)
 
-        # título del gráfico arriba
+        # título arriba del gráfico
         c.setFont("Helvetica-Bold", 8)
         c.setFillColor(colors.black)
         c.drawString(chart_x, chart_y_top+12, "Perfil conductual (0–6)")
 
-        return chart_y_bottom-40  # devolvemos un Y de referencia por si lo quieres usar
-
-    # --- COLUMNA DERECHA: LEYENDA + FORTALEZAS/APOYO
     def draw_right_column():
         col_x = 330
-        # Arrancamos esta columna debajo de la caja de datos del candidato
         y_start = H - 190  # ~652 aprox
 
-        # 1. Guía de lectura
+        # Guía dimensiones
         yy = y_start
-        yy = draw_text(col_x, yy, "Guía de lectura de dimensiones", size=9, bold=True)
+        yy = draw_text(col_x, yy, "Guía de lectura de dimensiones",
+                       size=9, bold=True)
 
         legend_lines = [
             "E  = Extraversión / iniciativa social",
             "EE = Estabilidad Emocional (manejo presión)",
             "DC = Dureza Conductual / estilo directo",
             "C  = Consistencia / Autopresentación",
+            "M  = Motivación / Compromiso con el Puesto",
         ]
         for L in legend_lines:
-            yy = draw_wrapped_block(col_x, yy, L, 230, size=8, bold=False,
+            yy = draw_wrapped_block(col_x, yy, L, 230,
+                                    size=8, bold=False,
                                     color=colors.black, leading=2)
-            yy -= 2  # pequeño espacio entre líneas
-
+            yy -= 2
         yy -= 6
 
-        # 2. Caja resumen conductual
+        # Caja de Fortalezas / Apoyo
         box_w = 230
-        box_h = 120
+        box_h = 140
         box_top_y = yy
         c.setStrokeColor(colors.lightgrey)
         c.setFillColor(colors.white)
         c.rect(col_x, box_top_y - box_h, box_w, box_h, stroke=1, fill=1)
 
         inner_y = box_top_y - 12
-        inner_y = draw_text(col_x+8, inner_y, "Resumen conductual observado",
+        inner_y = draw_text(col_x+8, inner_y,
+                            "Resumen conductual observado",
                             size=9, bold=True)
 
-        inner_y = draw_text(col_x+8, inner_y, "Fortalezas potenciales:",
+        inner_y = draw_text(col_x+8, inner_y,
+                            "Fortalezas potenciales:",
                             size=8, bold=True)
-        inner_y = draw_bullet_list(col_x+14, inner_y, fortalezas,
+        inner_y = draw_bullet_list(col_x+14, inner_y,
+                                   fortalezas,
                                    box_w-22, size=8, leading=2)
 
         inner_y = draw_text(col_x+8, inner_y,
                             "Aspectos a monitorear / apoyo sugerido:",
                             size=8, bold=True)
-        inner_y = draw_bullet_list(col_x+14, inner_y, apoyos,
+        inner_y = draw_bullet_list(col_x+14, inner_y,
+                                   apoyos,
                                    box_w-22, size=8, leading=2)
 
-    # Dibuja la fila superior completa
     def draw_top_section():
         draw_header_block()
         draw_candidate_box()
         draw_bar_chart_with_scores()
         draw_right_column()
-        # No devolvemos nada: es una sección fija pensada para ocupar hasta aprox y=520
 
-    # ============================================================
-    # SECCIÓN 2: SLIDERS
-    # La ubicamos MANUALMENTE a y≈480 hacia abajo, en toda la mitad baja.
-    # Esto evita traslape con la fila superior.
-    # ============================================================
-
+    # ---------- BLOQUE 2: Sliders con 5 dimensiones ----------
     def draw_sliders_section():
         start_x   = 40
-        y_cursor  = 480   # <-- anclado fijo para que no choque con arriba
+        y_cursor  = 480  # anclado fijo
         bar_len   = 260
 
         c.setFont("Helvetica-Bold",10)
@@ -847,17 +742,18 @@ def generate_pdf_bytes(report: dict) -> bytes:
             ("Estabilidad Emocional", stab_val, levelN, slider_text["EE"]),
             ("Dureza Conductual / Estilo Directo", p_val, levelP, slider_text["DC"]),
             ("Consistencia / Autopresentación", s_val, levelS, slider_text["C"]),
+            ("Motivación / Compromiso con el Puesto", m_val, levelM, slider_text["M"]),
         ]
 
         for (label, val, lvl, desc_line) in sliders_info:
-            # título
+            # título dimensión
             c.setFont("Helvetica-Bold",8)
             c.setFillColor(colors.black)
             c.drawString(start_x, y_cursor, label)
 
             base_y = y_cursor - 11
 
-            # barra base (0–6)
+            # barra
             c.setStrokeColor(colors.grey)
             c.setLineWidth(2)
             c.line(start_x, base_y, start_x+bar_len, base_y)
@@ -867,14 +763,14 @@ def generate_pdf_bytes(report: dict) -> bytes:
             c.setFillColor(colors.black)
             c.circle(px, base_y, 4, stroke=0, fill=1)
 
-            # texto nivel + puntaje
+            # nivel + puntaje
             c.setFont("Helvetica",7)
             c.setFillColor(colors.black)
             c.drawString(start_x+bar_len+12, base_y+2, f"{lvl} ({val}/6)")
 
-            # descripción wrapped debajo
+            # descripción envuelta
             desc_y = base_y - 14
-            desc_w = bar_len + 140  # más ancho para evitar wraps demasiado agresivos
+            desc_w = bar_len + 140
             desc_y = draw_wrapped_block(
                 start_x, desc_y,
                 desc_line,
@@ -885,19 +781,14 @@ def generate_pdf_bytes(report: dict) -> bytes:
                 leading=2
             )
 
-            # bajar para el siguiente bloque
             y_cursor = desc_y - 18
 
-    # ============================================================
-    # SECCIÓN 3: CONCLUSIÓN Y NOTA
-    # La ubicamos fija en la parte inferior, y=220 -> y=60
-    # ============================================================
-
+    # ---------- BLOQUE 3: Conclusión + Nota ----------
     def draw_closure_and_note():
         x0    = 40
-        y0    = 220      # parte alta de la caja final
+        y0    = 220
         box_w = W - 80
-        box_h = 140      # más alto para textos largos
+        box_h = 150
 
         c.setStrokeColor(colors.lightgrey)
         c.setFillColor(colors.white)
@@ -929,13 +820,12 @@ def generate_pdf_bytes(report: dict) -> bytes:
             leading=2
         )
 
-        # pie de página
         c.setFont("Helvetica",6)
         c.setFillColor(colors.grey)
         c.drawRightString(W-40, 60,
-                          "Uso interno RR.HH. · EPQR-A Adaptado · No clínico")
+                          "Test Creado por José Ignacio Taj-Taj")
 
-    # ===== DIBUJO FINAL EN ORDEN =====
+    # ---- dibujar en orden ----
     draw_top_section()
     draw_sliders_section()
     draw_closure_and_note()
@@ -945,220 +835,320 @@ def generate_pdf_bytes(report: dict) -> bytes:
     buf.seek(0)
     return buf.read()
 
+
 # ============================================================
-# ENVÍO AUTOMÁTICO DEL INFORME POR CORREO
+# EMAIL SENDER
 # ============================================================
-def send_report_via_email():
-    if st.session_state.email_sent:
-        return
-    report = st.session_state.final_report
-    pdf_bytes = generate_pdf_bytes(report)
+def send_email_with_pdf(to_email, pdf_bytes, filename, subject, body_text):
+    """
+    Envía el PDF al correo del evaluador como adjunto.
+    Usa la credencial proporcionada por el usuario.
+    NOTA: requiere acceso a internet saliente y que no bloquee SMTP.
+    """
+    FROM_ADDR = "jo.tajtaj@gmail.com"
+    APP_PASS  = "nlkt kujl ebdg cyts"  # App Password Gmail (entregado por el usuario)
 
     msg = EmailMessage()
-    msg["Subject"] = f"Informe EPQR-A - {report['candidate']} - {report['cargo']}"
-    msg["From"] = "jo.tajtaj@gmail.com"
-    msg["To"] = "jo.tajtaj@gmail.com"
+    msg["Subject"] = subject
+    msg["From"] = FROM_ADDR
+    msg["To"] = to_email
+    msg.set_content(body_text)
 
-    msg.set_content(
-        "Se adjunta el informe EPQR-A en formato visual para RR.HH.\n"
-        "Incluye perfil conductual, fortalezas, aspectos a apoyar\n"
-        "y síntesis de ajuste al cargo.\n"
-        "Uso interno RR.HH.\n"
+    # adjuntar PDF
+    msg.add_attachment(
+        pdf_bytes,
+        maintype="application",
+        subtype="pdf",
+        filename=filename
     )
 
-    filename = f"EPQRA_{report['candidate'].replace(' ','_')}.pdf"
-    msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
+    # Envío SMTP (gmail SSL 465)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(FROM_ADDR, APP_PASS)
+        smtp.send_message(msg)
 
-    gmail_user = "jo.tajtaj@gmail.com"
-    gmail_pass = "nlkt kujl ebdg cyts"  # clave de app
-
-    # Envío SMTP Gmail
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(gmail_user, gmail_pass)
-        server.send_message(msg)
-
-    st.session_state.email_sent = True
 
 # ============================================================
-# CALLBACKS DE FLUJO
+# ARMADO DEL INFORME (report dict)
 # ============================================================
-def select_job(job_key: str):
-    st.session_state.selected_job = job_key
-    st.session_state.phase = "candidate"
+def build_report_and_send():
+    """
+    1. Calcula puntajes de las 5 dimensiones (E, EE, DC, C, M)
+    2. Construye texto de conclusión
+    3. Genera PDF
+    4. Envía PDF por correo
+    """
 
-def start_test_if_ready():
-    if st.session_state.candidate_name and st.session_state.evaluator_email:
-        st.session_state.phase = "test"
-        st.session_state.q_idx = 0
-        st.session_state.answers = {i: None for i in range(len(QUESTIONS))}
+    # 1) Obtener puntajes
+    trait_scores = compute_trait_scores(st.session_state.answers)
+    e_raw  = trait_scores["E"]      # 0..6
+    n_raw  = trait_scores["N"]      # 0..6
+    p_raw  = trait_scores["P"]      # 0..6
+    s_raw  = trait_scores["S"]      # 0..6
+    m_raw  = compute_commitment_score(st.session_state.answers)  # 0..6
 
-def answer_question(answer_val: int):
-    idx = st.session_state.q_idx
-    st.session_state.answers[idx] = answer_val
+    stab_val = 6 - n_raw  # Estabilidad Emocional (EE)
+    e_val    = e_raw
+    p_val    = p_raw
+    s_val    = s_raw
+    m_val    = m_raw
 
-    if idx < len(QUESTIONS) - 1:
-        st.session_state.q_idx = idx + 1
-        st.session_state._needs_rerun = True
+    # 2) niveles cualitativos
+    levelE  = qualitative_level(e_val)
+    levelEE = qualitative_level(stab_val)
+    levelDC = qualitative_level(p_val)
+    levelC  = qualitative_level(s_val)
+    levelM  = qualitative_commitment(m_val)
+
+    # 3) slider_text (descripciones por dimensión)
+    slider_text = build_slider_texts(e_val, stab_val, p_val, s_val, m_val)
+
+    # 4) fortalezas / apoyos
+    fortalezas, apoyos = build_strengths_and_risks(
+        e_val, stab_val, p_val, s_val, m_val
+    )
+
+    # 5) texto de permanencia
+    rotacion_line = commitment_summary_line(m_val)
+
+    # 6) conclusión global vs cargo
+    cargo_key = st.session_state.selected_job
+    cierre_status = match_job_requirements(
+        cargo_key,
+        e_val,
+        stab_val,
+        p_val,
+        s_val,
+        m_val
+    )
+
+    # 7) armar el párrafo grande "cierre"
+    #    Integramos rotacion_line + cierre_status
+    cierre_full = (
+        rotacion_line
+        + " "
+        + cierre_status
+    )
+
+    # 8) nota metodológica fija (pedida por el usuario)
+    nota_metodo = (
+        "Este informe se basa en la auto-respuesta declarada por la persona evaluada "
+        "en el Cuestionario EPQR-A. Los resultados describen tendencias y preferencias "
+        "conductuales observadas en el momento de la evaluación. No constituyen un "
+        "diagnóstico clínico ni, por sí solos, una determinación absoluta de idoneidad "
+        "laboral. Se recomienda complementar esta información con entrevista estructurada, "
+        "verificación de experiencia y evaluación técnica del cargo."
+    )
+
+    # 9) Construir la estructura report para el PDF
+    now_txt = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    report = {
+        "candidate": st.session_state.candidate_name,
+        "cargo": JOB_PROFILES[cargo_key]["title"],
+        "fecha": now_txt,
+        "evaluator": st.session_state.evaluator_email.upper(),
+        "scores_final": {
+            "E":  e_val,
+            "EE": stab_val,
+            "DC": p_val,
+            "C":  s_val,
+            "M":  m_val,
+        },
+        "levels": {
+            "E":  levelE,
+            "EE": levelEE,
+            "DC": levelDC,
+            "C":  levelC,
+            "M":  levelM,
+        },
+        "fortalezas": fortalezas,
+        "apoyos": apoyos,
+        "slider_text": slider_text,
+        "cierre": cierre_full,
+        "nota": nota_metodo,
+    }
+
+    # 10) Generar PDF en memoria
+    pdf_bytes = generate_pdf_bytes(report)
+
+    # 11) Enviar por correo (una vez)
+    if not st.session_state.already_sent:
+        try:
+            send_email_with_pdf(
+                to_email=st.session_state.evaluator_email,
+                pdf_bytes=pdf_bytes,
+                filename="Informe_EPQR_Operativo.pdf",
+                subject="Informe EPQR-A Operativo",
+                body_text=(
+                    "Adjunto informe interno EPQR-A Operativo "
+                    f"({st.session_state.candidate_name} / {report['cargo']}). "
+                    "Uso interno RR.HH."
+                ),
+            )
+            st.session_state.already_sent = True
+        except Exception as e:
+            # Si falla el envío, igual seguimos y mostramos finalizado;
+            # puedes registrar el error si quieres debug.
+            st.session_state.already_sent = True
+
+    # listo
+    return report
+
+
+# ============================================================
+# CALLBACKS / FLUJO INTERACTIVO
+# ============================================================
+
+def submit_answer(ans_value: int):
+    """
+    Guarda la respuesta de la pregunta actual,
+    avanza a la siguiente,
+    o si ya terminó: genera y envía reporte, y pasa a pantalla final.
+    """
+    q_idx = st.session_state.current_q
+    st.session_state.answers[q_idx] = ans_value
+
+    if q_idx < len(QUESTIONS) - 1:
+        st.session_state.current_q = q_idx + 1
     else:
-        # fin del test:
-        build_final_report()        # genera final_report con todo
-        send_report_via_email()     # envía PDF automáticamente
-        st.session_state.phase = "done"
-        st.session_state._needs_rerun = True
+        # fin del test
+        build_report_and_send()
+        st.session_state.stage = "done"
 
-def reset_all():
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    init_state()
 
-# ============================================================
-# RENDER DE CADA FASE
-# ============================================================
-def render_phase_role():
+def view_select_job():
     st.markdown(
         """
-        <div class="card-header">
-            <h1 style="font-size:1.25rem;">Test EPQR-A · Selección Operativa</h1>
-            <div class="badge-pill">Evaluación conductual interna</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        """
-        <div class="card">
-            <p style="margin-top:0;color:#374151;font-size:.9rem;line-height:1.4;">
-            Esta herramienta describe el estilo conductual del candidato
-            en relación con tareas operativas. Al finalizar se genera un
-            informe interno con conclusión
-            <b>“GLOBALMENTE CONSISTENTE” / “REQUIERE REVISIÓN ADICIONAL”</b>.
-            El candidato no ve resultados.
+        <div style='background:linear-gradient(to bottom right,#eef4ff,#dbeafe);
+                    padding:2rem;border-radius:1rem;box-shadow:0 20px 40px rgba(0,0,0,0.08);'>
+            <h1 style='margin:0;font-size:1.5rem;font-weight:700;color:#1e293b;
+                       text-align:center;'>
+                Evaluación EPQR-A Operativa
+            </h1>
+            <p style='color:#475569;text-align:center;margin-top:.5rem;'>
+                Seleccione el cargo a evaluar
             </p>
         </div>
         """,
         unsafe_allow_html=True
     )
 
+    st.write("")
+    cols = st.columns(2)
+    jobs_list = list(JOB_PROFILES.keys())
+
+    for idx, job_key in enumerate(jobs_list):
+        col = cols[idx % 2]
+        with col:
+            if st.button(
+                JOB_PROFILES[job_key]["title"],
+                key=f"job_{job_key}",
+                help="Evaluar para este cargo",
+                use_container_width=True,
+            ):
+                st.session_state.selected_job = job_key
+                st.session_state.stage = "info"
+
+
+def view_info_form():
+    cargo_titulo = JOB_PROFILES[st.session_state.selected_job]["title"]
+
     st.markdown(
-        """
-        <div class="card">
-            <h2 style="font-size:1rem;margin:0 0 .5rem 0;color:#111827;font-weight:600;">
-                Seleccione el cargo a evaluar
+        f"""
+        <div style='background:#fff;border-radius:1rem;border:1px solid #e2e8f0;
+                    box-shadow:0 18px 32px rgba(0,0,0,0.06);padding:2rem;'>
+            <h2 style='margin-top:0;margin-bottom:.5rem;
+                       font-size:1.25rem;font-weight:700;color:#1e293b;'>
+                Datos del candidato
             </h2>
+            <p style='color:#475569;margin-top:0;margin-bottom:1rem;'>
+                Cargo evaluado: <b>{cargo_titulo}</b>
+            </p>
+            <p style='color:#64748b;font-size:.9rem;'>
+                Esta información se usará para generar el informe interno y enviarlo
+                automáticamente al correo del evaluador en formato PDF.
+            </p>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    for job_key, info in JOB_PROFILES.items():
-        c1, c2 = st.columns([0.75, 0.25])
-        with c1:
-            st.markdown(
-                f"""
-                <div class="alt-block">
-                    <h4>{info["title"]}</h4>
-                    <p>{info["desc"]}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        with c2:
-            st.button(
-                "Evaluar",
-                key=f"btnsel_{job_key}",
-                on_click=select_job,
-                args=(job_key,),
-                use_container_width=True
-            )
-
-def render_phase_candidate():
-    job_key = st.session_state.selected_job
-    profile = JOB_PROFILES[job_key]
-
-    st.markdown(
-        f"""
-        <div class="card-header">
-            <h2 style="font-size:1.1rem;">Datos del Candidato</h2>
-            <div class="badge-pill">{profile["title"]}</div>
-        </div>
-        """,
-        unsafe_allow_html=True
+    st.write("")
+    st.session_state.candidate_name = st.text_input(
+        "Nombre del candidato",
+        value=st.session_state.candidate_name,
+        placeholder="Nombre completo"
+    )
+    st.session_state.evaluator_email = st.text_input(
+        "Correo del evaluador (RR.HH. / Supervisor responsable)",
+        value=st.session_state.evaluator_email,
+        placeholder="nombre@empresa.com"
     )
 
-    with st.form(key="candidate_form", clear_on_submit=False):
-        st.session_state.candidate_name = st.text_input(
-            "Nombre completo del candidato",
-            value=st.session_state.candidate_name,
-            placeholder="Ej: Juan Pérez"
-        )
-        st.session_state.evaluator_email = st.text_input(
-            "Correo del evaluador (RR.HH. / Supervisor)",
-            value=st.session_state.evaluator_email,
-            placeholder="nombre@empresa.com"
-        )
-        st.markdown(
-            """
-            <div class="muted" style="margin-top:.5rem;">
-            Estos datos se incluirán en el informe interno que se envía a RR.HH.
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        submitted = st.form_submit_button(
-            "Iniciar Test",
-            use_container_width=True
-        )
+    st.write("")
+    ready = (
+        len(st.session_state.candidate_name.strip()) > 0 and
+        len(st.session_state.evaluator_email.strip()) > 0
+    )
+    if st.button(
+        "Comenzar test",
+        type="primary",
+        disabled=not ready,
+        use_container_width=True
+    ):
+        st.session_state.current_q = 0
+        st.session_state.answers = {i: None for i in range(len(QUESTIONS))}
+        st.session_state.already_sent = False
+        st.session_state.stage = "test"
 
-    if submitted:
-        start_test_if_ready()
-        st.rerun()
 
-def render_phase_test():
-    idx = st.session_state.q_idx
+def view_test():
+    q_idx = st.session_state.current_q
+    q = QUESTIONS[q_idx]
+
     total = len(QUESTIONS)
-    pct = round(((idx + 1) / total) * 100)
+    progreso = int(round(((q_idx+1)/total)*100, 0))
 
     st.markdown(
         f"""
-        <div class="card-header">
-            <h3 style="font-size:1rem;margin:0 0 .25rem 0;font-weight:600;">
-                EPQR-A · {JOB_PROFILES[st.session_state.selected_job]["title"]}
-            </h3>
-            <div style="font-size:.8rem;opacity:.9;">
-                Pregunta {idx+1} de {total} · {pct}%
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        f"""
-        <div class="card" style="padding-bottom:.75rem;">
-            <div style="font-size:.8rem;color:#4b5563;margin-bottom:.5rem;display:flex;justify-content:space-between;">
-                <span>Avance</span><span>{pct}%</span>
-            </div>
-            <div style="width:100%;background:#e5e7eb;border-radius:999px;height:8px;overflow:hidden;">
-                <div style="
-                    width:{pct}%;
-                    background:linear-gradient(90deg,#2563eb 0%,#4f46e5 100%);
-                    height:8px;border-radius:999px;
-                    transition:width .2s;">
+        <div style='border-radius:1rem;overflow:hidden;
+                    box-shadow:0 20px 40px rgba(0,0,0,0.08);'>
+            <div style='background:linear-gradient(to right,#1e40af,#4338ca);
+                        color:white;padding:1rem 1.5rem;'>
+                <div style='display:flex;justify-content:space-between;
+                            align-items:flex-start;flex-wrap:wrap;'>
+                    <div style='font-size:1rem;font-weight:600;'>
+                        Test EPQR-A Operativo
+                    </div>
+                    <div style='background:rgba(255,255,255,0.2);
+                                border-radius:999px;
+                                padding:0.25rem 0.75rem;
+                                font-size:.8rem;'>
+                        Pregunta {q_idx+1} de {total} · {progreso}%
+                    </div>
+                </div>
+                <div style='font-size:.8rem;color:#c7d2fe;margin-top:.25rem;'>
+                    Cargo: {JOB_PROFILES[st.session_state.selected_job]["title"]}
                 </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
 
-    st.markdown(
-        f"""
-        <div class="card" style="margin-top:1rem;">
-            <div style="font-size:1rem;color:#111827;line-height:1.4;margin-bottom:1rem;font-weight:500;">
-                {QUESTIONS[idx]}
+            <div style='background:#f8fafc;padding:1rem 1.5rem;
+                        border-bottom:1px solid #e2e8f0;'>
+                <div style='height:6px;border-radius:999px;
+                            background:#e2e8f0;overflow:hidden;'>
+                    <div style='height:6px;background:#3b82f6;
+                                width:{progreso}%;'></div>
+                </div>
             </div>
+
+            <div style='background:#fff;padding:2rem 1.5rem;'>
+                <p style='font-size:1.1rem;color:#1e293b;
+                          line-height:1.4;margin:0 0 1.5rem 0;'>
+                    {q["text"]}
+                </p>
+
+                <div style='display:flex;gap:1rem;flex-wrap:wrap;'>
         """,
         unsafe_allow_html=True
     )
@@ -1167,86 +1157,76 @@ def render_phase_test():
     with col_yes:
         st.button(
             "Sí",
-            key=f"yes_{idx}",
-            help="Marcar 'Sí' y avanzar",
-            on_click=answer_question,
-            args=(1,),
-            use_container_width=True
+            key=f"yes_{q_idx}",
+            type="primary",
+            use_container_width=True,
+            on_click=submit_answer,
+            args=(1,)
         )
     with col_no:
         st.button(
             "No",
-            key=f"no_{idx}",
-            help="Marcar 'No' y avanzar",
-            on_click=answer_question,
-            args=(0,),
-            use_container_width=True
+            key=f"no_{q_idx}",
+            use_container_width=True,
+            on_click=submit_answer,
+            args=(0,)
         )
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
     st.markdown(
         """
-        <div class="card" style="background:#f9fafb;">
-            <div style="display:flex;gap:.5rem;align-items:flex-start;">
-                <div style="font-size:.8rem;color:#4f46e5;font-weight:600;">⚠ Confidencial</div>
-                <div class="muted" style="font-size:.8rem;">
-                    Responda honestamente. Esta evaluación describe estilo conductual
-                    y manejo frente a la presión laboral. No es un diagnóstico clínico.
                 </div>
             </div>
+
+            <div style='background:#f8fafc;padding:1rem 1.5rem;
+                        border-top:1px solid #e2e8f0;font-size:.8rem;color:#475569;'>
+                <b>Confidencialidad:</b> Esta información es de uso interno en el proceso
+                de selección y operación. El candidato no recibe copia directa del informe.
+            </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-def render_phase_done():
+
+def view_done():
     st.markdown(
         """
-        <div class="card-header" style="background:linear-gradient(90deg,#10b981 0%,#059669 100%);box-shadow:inset 0 0 30px rgba(255,255,255,.18);">
-            <div style="
-                width:3.5rem;height:3.5rem;
-                background:#ffffff;
-                border-radius:999px;
-                display:flex;align-items:center;justify-content:center;
-                margin:0 auto .75rem auto;
-                box-shadow:0 20px 24px -8px rgba(255,255,255,.5);
-            ">
-                <svg xmlns="http://www.w3.org/2000/svg" style="color:#10b981;width:1.5rem;height:1.5rem;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
+        <div style='background:linear-gradient(to bottom right,#ecfdf5,#d1fae5);
+                    padding:2rem;border-radius:1rem;box-shadow:0 24px 48px rgba(0,0,0,0.08);
+                    text-align:center;'>
+            <div style='width:64px;height:64px;border-radius:999px;
+                        background:#10b981;color:white;
+                        display:flex;align-items:center;justify-content:center;
+                        font-size:2rem;font-weight:700;margin:0 auto 1rem auto;'>
+                ✔
             </div>
-            <div class="final-big">TEST FINALIZADO</div>
-            <div class="final-sub">
-                Sus respuestas han sido registradas correctamente.
-                El informe interno fue generado y enviado para evaluación.
-            </div>
+            <h2 style='font-size:1.4rem;font-weight:700;
+                       color:#065f46;margin:0 0 .5rem 0;'>
+                Evaluación finalizada
+            </h2>
+            <p style='color:#065f46;margin:0;'>
+                Los resultados han sido procesados y enviados al correo del evaluador.
+            </p>
+            <p style='color:#065f46;margin:.5rem 0 0 0;font-size:.9rem;'>
+                Este documento es interno y no clínico. Gracias.
+            </p>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-# ============================================================
-# ROUTER PRINCIPAL
-# ============================================================
-if st.session_state.phase == "role":
-    render_phase_role()
-elif st.session_state.phase == "candidate":
-    render_phase_candidate()
-elif st.session_state.phase == "test":
-    render_phase_test()
-elif st.session_state.phase == "done":
-    render_phase_done()
-else:
-    st.write("Estado inválido. Reiniciando…")
-    reset_all()
 
 # ============================================================
-# RERUN CONTROL (auto avance sin doble click)
+# RENDER PRINCIPAL SEGÚN STAGE
 # ============================================================
-if st.session_state._needs_rerun:
-    st.session_state._needs_rerun = False
-    st.rerun()
+if st.session_state.stage == "select_job":
+    view_select_job()
 
+elif st.session_state.stage == "info":
+    view_info_form()
 
+elif st.session_state.stage == "test":
+    view_test()
 
+else:  # "done"
+    view_done()
