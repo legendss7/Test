@@ -223,86 +223,105 @@ def compute_scores(ans_dict):
 
     return {"raw": raw_scores, "norm": norm_scores}
 
-def qualitative_level(norm_score):
-    if norm_score > 4.5:
+
+# ---- NUEVA FUNCIÓN: NIVEL usando puntaje bruto (0-8)
+def qualitative_level_raw(raw_score):
+    # 0-2 bajo, 3-5 medio, 6-8 alto
+    if raw_score >= 6:
         return "Alto"
-    elif norm_score > 2.0:
+    elif raw_score >= 3:
         return "Medio"
     else:
         return "Bajo"
 
-def build_short_desc(E, EE, DC, C, M):
+
+def build_short_desc(E_norm, EE_norm, DC_norm, C_norm, M_norm):
     out = {}
     out["E"]  = (
         "Tendencia a interactuar y coordinar con otros cuando la tarea lo requiere."
-        if E>2.0 else
+        if E_norm > 2.0 else
         "Estilo más bien reservado, baja exposición pública."
     )
     out["EE"] = (
         "Manejo estable frente a presión y cambio."
-        if EE>2.0 else
+        if EE_norm > 2.0 else
         "Puede requerir apoyo en escenarios de alta urgencia."
     )
     out["DC"] = (
         "Capacidad para marcar prioridades operativas y sostener criterios de cumplimiento."
-        if DC>2.0 else
+        if DC_norm > 2.0 else
         "Prefiere evitar confrontación directa; espera orden sin choque."
     )
     out["C"]  = (
         "Orientación a normas, búsqueda de imagen responsable y cumplimiento declarado."
-        if C>2.0 else
+        if C_norm > 2.0 else
         "Puede tensionar estándares si prima su propio criterio sobre lo formal."
     )
     out["M"]  = (
         "Disposición declarada a cumplir y mantenerse en el puesto si las condiciones son claras."
-        if M>2.0 else
+        if M_norm > 2.0 else
         "Declara baja intención de permanencia si la adaptación inicial no es cómoda."
     )
     return out
 
-def build_strengths_risks(E, EE, DC, C, M):
+
+def build_strengths_risks(E_norm, EE_norm, DC_norm, C_norm, M_norm):
     fortalezas = []
     monitoreo = []
 
-    if E > 4.5:
+    # Extraversión
+    if E_norm >= 4.5:
         fortalezas.append("Comunicación activa y coordinación con el equipo.")
-    elif E <= 2.0:
+    elif E_norm <= 2.0:
         monitoreo.append("Puede requerir instrucciones claras más que exposición frente a grupos.")
 
-    if EE > 4.5:
+    # Estabilidad Emocional
+    if EE_norm >= 4.5:
         fortalezas.append("Manejo estable de presión y foco en la tarea.")
-    elif EE <= 2.0:
+    elif EE_norm <= 2.0:
         monitoreo.append("Podría necesitar apoyo directo en escenarios de alta urgencia.")
 
-    if DC > 4.5:
+    # Dureza Conductual
+    if DC_norm >= 4.5:
         fortalezas.append("Capacidad para marcar prioridades operativas bajo presión.")
         monitoreo.append("Su comunicación directa podría percibirse exigente; acordar estándares claros.")
-    elif DC <= 2.0:
+    elif DC_norm <= 2.0:
         monitoreo.append("Tiende a evitar confrontación; riesgo de omitir incumplimientos de otros.")
 
-    if C > 4.5:
+    # Consistencia
+    if C_norm >= 4.5:
         fortalezas.append("Alta adhesión declarada a normas y procedimientos.")
-    elif C <= 2.0:
+    elif C_norm <= 2.0:
         monitoreo.append("Puede tensionar estándares si prioriza su propio criterio sobre el protocolo.")
 
-    if M > 4.5:
+    # Motivación / Permanencia
+    if M_norm >= 4.5:
         fortalezas.append("Declara compromiso sostenido y disposición a permanecer en el puesto.")
-    elif M <= 2.0:
+    elif M_norm <= 2.0:
         monitoreo.append("Existe riesgo de rotación temprana si la adaptación inicial no calza.")
+
+    # fallback para no dejar cajas vacías
+    if not fortalezas:
+        fortalezas.append("Mantiene un estilo de trabajo funcional al rol evaluado.")
+    if not monitoreo:
+        monitoreo.append("No se observan alertas conductuales críticas declaradas en esta medición inicial.")
 
     return fortalezas[:4], monitoreo[:4]
 
-def build_commitment_line(M):
-    if M > 4.5:
+
+def build_commitment_line(M_raw):
+    # ahora usamos puntaje bruto M_raw (0-8)
+    if M_raw >= 6:
         return "Compromiso declarado: alta intención de permanencia y continuidad en el rol."
-    elif M > 2.0:
+    elif M_raw >= 3:
         return "Compromiso declarado: se mantendría en el cargo si percibe trato justo y claridad operativa."
     else:
         return "Compromiso declarado: riesgo de salida temprana si la adaptación inicial no es satisfactoria."
 
-def cargo_fit_text(job_key, E, EE, DC, C, M):
+
+def cargo_fit_text(job_key, E_norm, EE_norm, DC_norm, C_norm, M_norm):
     req = JOB_PROFILES[job_key]["req"]
-    got = {"E":E, "EE":EE, "DC":DC, "C":C, "M":M}
+    got = {"E":E_norm, "EE":EE_norm, "DC":DC_norm, "C":C_norm, "M":M_norm}
     ok_all = True
     for dim, (mn, mx) in req.items():
         if not (got[dim] >= mn and got[dim] <= mx):
@@ -321,7 +340,8 @@ def cargo_fit_text(job_key, E, EE, DC, C, M):
             f"CONSISTENTE con las exigencias habituales del cargo {cargo_name}."
         )
 
-# ---------- HELPERS PDF ----------
+
+# ---------- TEXTO / WRAP HELPERS PARA PDF ----------
 def _wrap(c, text, width, font="Helvetica", size=8):
     words = text.split()
     lines = []
@@ -349,17 +369,21 @@ def _draw_par(c, text, x, y, width, font="Helvetica", size=8, leading=11,
         y -= leading
     return y
 
+
 def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
     """
-    Tabla 'Detalle por dimensión' a ancho completo.
+    Tabla "Detalle por dimensión" a ancho completo.
     rows = [
       { "dim":..., "puntaje":..., "nivel":..., "desc":... },
       ...
     ]
+    Esta versión:
+    - Usa puntaje bruto (X/8)
+    - Nivel viene de qualitative_level_raw()
     """
 
-    header_h   = 24     # alto encabezado tabla
-    row_h_base = 40     # alto mínimo por fila
+    header_h   = 24
+    row_h_base = 40
     pad_x      = 8
     leading    = 10
     font_hdr   = "Helvetica-Bold"
@@ -368,14 +392,12 @@ def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
     size_hdr   = 9
     size_cell  = 8
 
-    # Columnas (ajustadas para página A4 paisaje vertical con márgenes)
-    col_dim_x   = x + pad_x         # nombre dimensión
-    col_punt_x  = x + 200           # puntaje bruto
-    col_nivel_x = x + 260           # nivel cualitativo
-    col_desc_x  = x + 320           # descripción larga
-    table_right = x + w             # borde derecho caja
+    col_dim_x   = x + pad_x
+    col_punt_x  = x + 200
+    col_nivel_x = x + 260
+    col_desc_x  = x + 320
+    table_right = x + w
 
-    # Calcular alto total tabla (dinámico según wraps)
     total_h = header_h
     wrapped_rows = []
 
@@ -407,22 +429,22 @@ def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
         })
         total_h += row_h
 
-    # Caja externa
+    # caja externa
     c.setStrokeColor(colors.lightgrey)
     c.setFillColor(colors.white)
     c.rect(x, y_top-total_h, w, total_h, stroke=1, fill=1)
 
-    # Título
+    # título
     c.setFont(font_hdr, size_hdr)
     c.setFillColor(colors.black)
     c.drawString(x+pad_x, y_top-14, "Detalle por dimensión")
 
-    # línea bajo título
+    # línea separadora título
     header_y_base = y_top - header_h
     c.setStrokeColor(colors.lightgrey)
     c.line(x, header_y_base, x+w, header_y_base)
 
-    # Encabezados de columnas
+    # encabezados columnas
     c.setFont(font_txt_b, size_cell)
     c.setFillColor(colors.black)
     c.drawString(col_dim_x,   header_y_base+leading-2, "Dimensión")
@@ -430,10 +452,10 @@ def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
     c.drawString(col_nivel_x, header_y_base+leading-2, "Nivel")
     c.drawString(col_desc_x,  header_y_base+leading-2, "Descripción breve")
 
-    # línea bajo encabezados
+    # línea separadora encabezados
     c.line(x, header_y_base-4, x+w, header_y_base-4)
 
-    # Dibujar filas
+    # filas
     cursor_y = header_y_base-8
     for row in wrapped_rows:
         row_top_y    = cursor_y
@@ -443,21 +465,21 @@ def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
         c.setStrokeColor(colors.lightgrey)
         c.line(x, row_bottom_y, x+w, row_bottom_y)
 
-        # Dimensión (negrita, con wrap)
+        # Dimensión
         c.setFont(font_txt_b, size_cell)
         text_y = row_top_y - 12
         for dl in row["dim_lines"]:
             c.drawString(col_dim_x, text_y, dl)
             text_y -= leading
 
-        # Puntaje (solo bruto X/8)
+        # Puntaje (bruto X/8)
         c.setFont(font_txt, size_cell)
         c.drawString(col_punt_x, row_top_y - 12, row["puntaje"])
 
-        # Nivel
+        # Nivel cualitativo (Bajo/Medio/Alto)
         c.drawString(col_nivel_x, row_top_y - 12, row["nivel"])
 
-        # Descripción breve (wrap completo en su columna)
+        # Descripción breve envuelta
         c.setFont(font_txt, size_cell)
         desc_y = row_top_y - 12
         for dl2 in row["desc_lines"]:
@@ -466,16 +488,15 @@ def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
 
         cursor_y = row_bottom_y
 
-    # devolver nueva Y para seguir dibujando más abajo
     return y_top - total_h - 16
 
 
 def draw_resumen_box_fullwidth(c, x, y_top, w, fortalezas, monitoreo):
     """
-    Caja 'Resumen conductual observado' a ancho completo,
-    con listas de fortalezas y aspectos a monitorear.
-    Devuelve nueva Y después de dibujar la caja.
+    Caja "Resumen conductual observado" ancho completo.
+    Siempre muestra fortalezas y monitoreo (con fallback).
     """
+
     pad_x = 8
     pad_top = 12
     pad_bottom = 12
@@ -485,8 +506,7 @@ def draw_resumen_box_fullwidth(c, x, y_top, w, fortalezas, monitoreo):
     size_tit  = 8
     size_txt  = 7
 
-    # Medir contenido para altura dinámica
-    # Título + subtítulos + bullets (envueltos)
+    # armamos contenido
     tmp_lines = []
     tmp_lines.append(("Resumen conductual observado", True))
     tmp_lines.append(("Fortalezas potenciales:", True))
@@ -496,7 +516,7 @@ def draw_resumen_box_fullwidth(c, x, y_top, w, fortalezas, monitoreo):
     for m in monitoreo:
         tmp_lines.append(("• " + m, False))
 
-    # wrap y conteo
+    # medir altura
     total_text_height = 0
     wrapped_content = []
     usable_w = w - 2*pad_x
@@ -509,26 +529,24 @@ def draw_resumen_box_fullwidth(c, x, y_top, w, fortalezas, monitoreo):
 
     box_h = pad_top + total_text_height + pad_bottom
 
-    # draw box
+    # caja
     c.setStrokeColor(colors.lightgrey)
     c.setFillColor(colors.white)
     c.rect(x, y_top - box_h, w, box_h, stroke=1, fill=1)
 
-    # draw text
+    # texto
     yy = y_top - pad_top
     for wrapped, fnt, sz in wrapped_content:
-        # si es título/sección (font_tit), bajamos un pelín extra arriba
         c.setFont(fnt, sz)
         c.setFillColor(colors.black)
         for line in wrapped:
             c.drawString(x+pad_x, yy, line)
             yy -= line_height
-        yy -= 2  # pequeño espacio entre bloques
+        yy -= 2
 
     return y_top - box_h - 16
 
 
-# ---------- GENERAR PDF ORDENADO ----------
 def generate_pdf(candidate_name,
                  cargo_name,
                  fecha_eval,
@@ -543,13 +561,13 @@ def generate_pdf(candidate_name,
                  nota_text):
 
     buf = BytesIO()
-    W, H = A4  # portrait
+    W, H = A4  # retrato
     c = canvas.Canvas(buf, pagesize=A4)
 
     margin_left = 36
     margin_right = 36
 
-    # ========== ENCABEZADO SUPERIOR IZQ / DER ==========
+    # ---------- HEADER SUPERIOR ----------
     c.setFont("Helvetica-Bold",10)
     c.setFillColor(colors.black)
     c.drawString(margin_left, H-40, "EMPRESA / LOGO")
@@ -561,18 +579,17 @@ def generate_pdf(candidate_name,
     c.setFont("Helvetica",7)
     c.drawRightString(W-margin_right, H-55, "Uso interno RR.HH. / Procesos productivos")
 
-    # ========== GRÁFICO DE BARRAS IZQUIERDA ==========
+    # ---------- GRAFICO DE BARRAS IZQUIERDA ----------
     chart_x = margin_left
     chart_y_bottom = H-260
     chart_w = 250
     chart_h = 120
 
-    # eje Y y grilla
     c.setStrokeColor(colors.black)
     c.setLineWidth(1)
     c.line(chart_x, chart_y_bottom, chart_x, chart_y_bottom+chart_h)
 
-    for lvl in range(0,7):  # 0..6
+    for lvl in range(0,7):
         yv = chart_y_bottom + (lvl/6.0)*chart_h
         c.setFont("Helvetica",6)
         c.setFillColor(colors.black)
@@ -593,7 +610,7 @@ def generate_pdf(candidate_name,
     tops = []
 
     for i,(key,label) in enumerate(dims_order):
-        val_norm = norm_scores[key]
+        val_norm = norm_scores[key]  # 0..6
         bx = chart_x + gap + i*(bar_w+gap)
         bh = (val_norm/6.0)*chart_h
         by = chart_y_bottom
@@ -604,12 +621,13 @@ def generate_pdf(candidate_name,
 
         tops.append((bx+bar_w/2.0, by+bh))
 
-        lvl_txt = qualitative_level(val_norm)
+        # nivel calculado con bruto
+        lvl_txt = qualitative_level_raw(raw_scores[key])
+
         c.setFont("Helvetica-Bold",7)
         c.setFillColor(colors.black)
         c.drawCentredString(bx+bar_w/2.0, chart_y_bottom-14, label)
 
-        # mostramos puntaje bruto y nivel (1 sola escala normalizada también sirve)
         c.setFont("Helvetica",6)
         c.drawCentredString(
             bx+bar_w/2.0,
@@ -617,7 +635,6 @@ def generate_pdf(candidate_name,
             f"{raw_scores[key]}/8  {val_norm:.1f}/6  {lvl_txt}"
         )
 
-    # línea negra que une los topes
     c.setStrokeColor(colors.black)
     c.setLineWidth(1.2)
     for j in range(len(tops)-1):
@@ -632,11 +649,11 @@ def generate_pdf(candidate_name,
     c.setFillColor(colors.black)
     c.drawString(chart_x, chart_y_bottom+chart_h+12, "Perfil conductual (0–6)")
 
-    # ========== CAJAS DERECHA (DATOS + GUÍA) ==========
+    # ---------- CAJAS DERECHA (DATOS + GUÍA) ----------
     box_x = margin_left + chart_w + 30
     box_w = W - margin_right - box_x
 
-    # Datos del candidato
+    # datos candidato
     box_y_top = H-140
     box_h = 70
     c.setStrokeColor(colors.lightgrey)
@@ -659,7 +676,7 @@ def generate_pdf(candidate_name,
     c.setFillColor(colors.grey)
     c.drawString(box_x+8, yy, "Documento interno. No clínico.")
 
-    # Guía de lectura dimensiones
+    # guía
     guide_y_top = H-230
     guide_h = 75
     c.setStrokeColor(colors.lightgrey)
@@ -683,7 +700,7 @@ def generate_pdf(candidate_name,
         c.drawString(box_x+8, gy, gl)
         gy -= 10
 
-    # ========== TABLA DETALLE POR DIMENSIÓN (ANCHO COMPLETO) ==========
+    # ---------- TABLA DETALLE DIMENSIONES (ANCHO COMPLETO) ----------
     dims_display = [
         ("E",  "Extraversión"),
         ("EE", "Estabilidad Emocional"),
@@ -694,18 +711,18 @@ def generate_pdf(candidate_name,
 
     table_rows = []
     for key,label in dims_display:
-        raw_v  = raw_scores[key]        # bruto 0..8
-        lvl_v  = qualitative_level(norm_scores[key])
-        desc_v = table_desc[key]        # descripción breve
+        raw_v  = raw_scores[key]            # bruto 0..8
+        lvl_v  = qualitative_level_raw(raw_v)
+        desc_v = table_desc[key]            # breve
         table_rows.append({
             "dim": label,
-            "puntaje": f"{raw_v}/8",    # SOLO puntaje bruto
+            "puntaje": f"{raw_v}/8",
             "nivel": lvl_v,
             "desc": desc_v,
         })
 
     table_x = margin_left
-    table_y_top = H-360  # punto vertical para iniciar tabla
+    table_y_top = H-360
     table_w = W - margin_right - margin_left
 
     after_table_y = draw_table_dimensiones_fullwidth(
@@ -716,7 +733,7 @@ def generate_pdf(candidate_name,
         table_rows
     )
 
-    # ========== RESUMEN CONDUCTUAL OBSERVADO (ANCHO COMPLETO) ==========
+    # ---------- RESUMEN CONDUCTUAL OBSERVADO (ANCHO COMPLETO) ----------
     after_resumen_y = draw_resumen_box_fullwidth(
         c,
         margin_left,
@@ -726,32 +743,27 @@ def generate_pdf(candidate_name,
         monitoreo
     )
 
-    # ========== BLOQUE FINAL: COMPROMISO / AJUSTE / NOTA ==========
+    # ---------- BLOQUE FINAL: COMPROMISO / AJUSTE / NOTA ----------
     concl_x = margin_left
     concl_y_top = after_resumen_y
     concl_w = W - margin_right - margin_left
 
-    # ahora este bloque final tiene 3 secciones internas
-    # medimos altura dinámica para dibujar caja
     pad_x = 8
     pad_top = 12
     pad_bottom = 12
     line_height = 10
 
-    # armamos todo el texto en orden:
     final_lines = [
         ("Compromiso / Permanencia", "Helvetica-Bold", 8, colors.black, compromiso_text),
         ("Ajuste al cargo evaluado", "Helvetica-Bold", 8, colors.black, ajuste_text),
         ("Nota metodológica", "Helvetica-Bold", 8, colors.black, nota_text),
     ]
 
-    # Estimar altura antes de dibujar
     total_h_content = 0
     wrapped_blocks = []
     usable_w = concl_w - 2*pad_x
 
     for (section_title, fnt_t, sz_t, col_t, body_txt) in final_lines:
-        # título
         title_wrapped = _wrap(c, section_title, usable_w, fnt_t, sz_t)
         body_wrapped  = _wrap(c, body_txt, usable_w, "Helvetica", 7)
 
@@ -768,14 +780,12 @@ def generate_pdf(candidate_name,
 
     yy = concl_y_top - pad_top
     for (title_wrapped, fnt_t, sz_t, col_t, body_wrapped) in wrapped_blocks:
-        # título
         c.setFont(fnt_t, sz_t)
         c.setFillColor(col_t)
         for line in title_wrapped:
             c.drawString(concl_x+pad_x, yy, line)
             yy -= line_height
         yy -= 2
-        # cuerpo
         c.setFont("Helvetica",7)
         c.setFillColor(colors.black)
         for line in body_wrapped:
@@ -783,7 +793,7 @@ def generate_pdf(candidate_name,
             yy -= line_height
         yy -= 8
 
-    # footer pequeño
+    # footer
     c.setFont("Helvetica",6)
     c.setFillColor(colors.grey)
     c.drawRightString(W-margin_right, 40,
@@ -814,25 +824,33 @@ def send_email_with_pdf(to_email, pdf_bytes, filename, subject, body_text):
         smtp.send_message(msg)
 
 
-# ---------- GENERAR Y ENVIAR INFORME AL TERMINAR ----------
+# ---------- GENERAR Y ENVIAR INFORME ----------
 def finalize_and_send():
     scores = compute_scores(st.session_state.answers)
-    raw_scores  = scores["raw"]
-    norm_scores = scores["norm"]
+    raw_scores  = scores["raw"]   # dict con E,EE,DC,C,M en 0..8
+    norm_scores = scores["norm"]  # dict con E,EE,DC,C,M en 0..6
 
-    E  = norm_scores["E"]
-    EE = norm_scores["EE"]
-    DC = norm_scores["DC"]
-    C_ = norm_scores["C"]
-    M  = norm_scores["M"]
+    E_norm  = norm_scores["E"]
+    EE_norm = norm_scores["EE"]
+    DC_norm = norm_scores["DC"]
+    C_norm  = norm_scores["C"]
+    M_norm  = norm_scores["M"]
 
-    table_desc = build_short_desc(E, EE, DC, C_, M)
-    fortalezas, monitoreo = build_strengths_risks(E, EE, DC, C_, M)
+    M_raw = raw_scores["M"]
 
-    compromiso_text = build_commitment_line(M)
-    ajuste_text     = cargo_fit_text(
+    # descripciones cortas para tabla
+    table_desc = build_short_desc(E_norm, EE_norm, DC_norm, C_norm, M_norm)
+
+    # fortalezas / monitoreo con fallback
+    fortalezas, monitoreo = build_strengths_risks(E_norm, EE_norm, DC_norm, C_norm, M_norm)
+
+    # compromiso con el puesto según puntaje bruto de motivación
+    compromiso_text = build_commitment_line(M_raw)
+
+    # ajuste cargo según rangos esperados por cargo
+    ajuste_text = cargo_fit_text(
         st.session_state.selected_job,
-        E, EE, DC, C_, M
+        E_norm, EE_norm, DC_norm, C_norm, M_norm
     )
 
     nota_text = (
@@ -876,7 +894,6 @@ def finalize_and_send():
                 ),
             )
         except Exception:
-            # si falla el envío no detenemos la app
             pass
         st.session_state.already_sent = True
 
@@ -941,7 +958,6 @@ def view_test():
     q = QUESTIONS[q_idx]
     progreso = (q_idx+1)/TOTAL_QUESTIONS
 
-    # Encabezado
     st.markdown(
         f"""
         <div style="
@@ -970,7 +986,6 @@ def view_test():
 
     st.progress(progreso)
 
-    # Tarjeta pregunta
     st.markdown(
         f"""
         <div style="
