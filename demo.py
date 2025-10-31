@@ -1,8 +1,13 @@
 import streamlit as st
 from typing import Dict
+import smtplib
+from email.message import EmailMessage
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 # ============================================================
-# Config general
+# CONFIG GENERAL
 # ============================================================
 st.set_page_config(
     page_title="EPQR-A | Evaluación Operativa",
@@ -12,7 +17,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# Estilos CSS
+# ESTILOS CSS
 # ============================================================
 st.markdown("""
 <style>
@@ -43,6 +48,7 @@ html, body, [data-testid="stAppViewContainer"]{
   padding:1rem 1.25rem;
   border-radius:1rem 1rem 0 0;
   box-shadow:inset 0 0 30px rgba(255,255,255,.18);
+  text-align:center;
 }
 .card-header h1,
 .card-header h2,
@@ -51,6 +57,7 @@ html, body, [data-testid="stAppViewContainer"]{
   font-weight:600;
   line-height:1.2;
 }
+
 .badge-pill{
   display:inline-block;
   font-size:.7rem;
@@ -85,71 +92,6 @@ html, body, [data-testid="stAppViewContainer"]{
   line-height:1.2;
 }
 
-.btn-main{
-  background:linear-gradient(90deg,#2563eb 0%,#4f46e5 100%);
-  color:#fff;
-  font-weight:600;
-  text-align:center;
-  width:100%;
-  border-radius:.75rem;
-  padding:.8rem 1rem;
-  border:0;
-  box-shadow:0 20px 24px -8px rgba(37,99,235,.4);
-}
-.btn-main[disabled]{
-  filter:grayscale(1);
-  opacity:.5;
-  box-shadow:none;
-}
-.btn-yes{
-  background:#10b981;
-  width:100%;
-  color:#fff;
-  font-weight:600;
-  text-align:center;
-  border-radius:.75rem;
-  padding:.9rem 1rem;
-  border:0;
-  box-shadow:0 20px 24px -8px rgba(16,185,129,.4);
-  font-size:1rem;
-}
-.btn-no{
-  background:#ef4444;
-  width:100%;
-  color:#fff;
-  font-weight:600;
-  text-align:center;
-  border-radius:.75rem;
-  padding:.9rem 1rem;
-  border:0;
-  box-shadow:0 20px 24px -8px rgba(239,68,68,.4);
-  font-size:1rem;
-}
-
-.tag-fit{
-  font-size:.8rem;
-  font-weight:600;
-  display:inline-block;
-  padding:.4rem .6rem;
-  border-radius:.5rem;
-  line-height:1.1;
-}
-.tag-fit-ok{
-  background:#d1fae5;
-  color:#065f46;
-  border:1px solid #10b98140;
-}
-.tag-fit-mid{
-  background:#fef3c7;
-  color:#92400e;
-  border:1px solid #facc1540;
-}
-.tag-fit-bad{
-  background:#fee2e2;
-  color:#991b1b;
-  border:1px solid #ef444440;
-}
-
 .muted{
   font-size:.8rem;
   color:#6b7280;
@@ -178,13 +120,59 @@ html, body, [data-testid="stAppViewContainer"]{
   color:#4b5563;
   line-height:1.4;
 }
+
+/* Botones Sí / No */
+.btn-yes{
+  background:#10b981;
+  width:100%;
+  color:#fff;
+  font-weight:600;
+  text-align:center;
+  border-radius:.75rem;
+  padding:.9rem 1rem;
+  border:0;
+  box-shadow:0 20px 24px -8px rgba(16,185,129,.4);
+  font-size:1rem;
+}
+.btn-no{
+  background:#ef4444;
+  width:100%;
+  color:#fff;
+  font-weight:600;
+  text-align:center;
+  border-radius:.75rem;
+  padding:.9rem 1rem;
+  border:0;
+  box-shadow:0 20px 24px -8px rgba(239,68,68,.4);
+  font-size:1rem;
+}
+
+/* Pantalla final gigante */
+.final-big{
+  font-size:clamp(2rem,4vw,3rem);
+  font-weight:800;
+  color:#10b981;
+  text-align:center;
+  line-height:1.2;
+  margin-bottom:1rem;
+}
+.final-sub{
+  font-size:1rem;
+  color:#374151;
+  text-align:center;
+  max-width:500px;
+  margin:0 auto;
+  line-height:1.4;
+}
 </style>
 """, unsafe_allow_html=True)
 
+
 # ============================================================
-# Definición psicométrica
+# PREGUNTAS (30 ÍTEMS) Y CATEGORÍAS
 # ============================================================
 
+# 24 originales + 6 adicionales en la misma línea conductual / emocional.
 QUESTIONS = [
     "¿Tiene con frecuencia subidas y bajadas de su estado de ánimo?",
     "¿Es usted una persona habladora?",
@@ -210,14 +198,40 @@ QUESTIONS = [
     "¿Cree que es mejor seguir las normas de la sociedad que las suyas propias?",
     "¿Las demás personas le consideran muy animado/a?",
     "¿Pone en práctica siempre lo que dice?",
+
+    # Ítems nuevos agregados para llegar a 30
+    "¿Pierde la calma fácilmente cuando algo no resulta en el trabajo?",
+    "¿Le resulta natural dar instrucciones claras a otras personas?",
+    "¿Alguna vez ocultó un error propio para evitar un llamado de atención?",
+    "¿Le cuesta desconectarse mentalmente de las preocupaciones?",
+    "¿Siente que puede mantener la cabeza fría en una emergencia?",
+    "¿Le cuesta seguir reglas que considera innecesarias?"
 ]
 
+# Asignamos cada ítem a una dimensión:
+# E = Extraversión / Asertividad social
+# N = Neuroticismo / Inestabilidad emocional
+# P = Psicoticismo / Impulsividad / dureza conductual
+# S = Sinceridad / Apego a normas / deseabilidad social
+#
+# Para mantener coherencia con las 24 primeras, seguimos el mismo mapeo que venías usando
+# y agregamos categorías razonables para las 6 nuevas.
 CATEGORIES = [
     "N", "E", "P", "E", "S", "P", "S", "P", "N", "S",
     "N", "P", "E", "N", "E", "P", "S", "N", "S", "E",
-    "N", "P", "E", "S"
+    "N", "P", "E", "S",
+    # nuevas
+    "N",  # pierde la calma fácilmente -> emocional
+    "E",  # dar instrucciones claras -> extraversión/asertividad
+    "S",  # ocultó error -> sinceridad/adh.normas invertida
+    "N",  # no desconectarse de preocupaciones -> emocional
+    "P",  # cabeza fría en emergencia -> dureza/control impulsivo (lo tratamos tipo P directo)
+    "P",  # saltarse reglas innecesarias -> impulsividad / desafío normas
 ]
 
+# ============================================================
+# PERFILES DE CARGO
+# ============================================================
 JOB_PROFILES = {
     "operario": {
         "title": "Operario de Producción",
@@ -262,11 +276,13 @@ JOB_PROFILES = {
 }
 
 # ============================================================
-# Estado
+# ESTADO (SESSION_STATE)
+# fases: "role" -> "candidate" -> "test" -> "done"
+# "done" = pantalla final verde SIN mostrar informe
 # ============================================================
 def init_state():
     if "phase" not in st.session_state:
-        st.session_state.phase = "role"  # role | candidate | test | result
+        st.session_state.phase = "role"
     if "selected_job" not in st.session_state:
         st.session_state.selected_job = None
     if "candidate_name" not in st.session_state:
@@ -283,13 +299,24 @@ def init_state():
         st.session_state.final_report = None
     if "_needs_rerun" not in st.session_state:
         st.session_state._needs_rerun = False
+    if "email_sent" not in st.session_state:
+        st.session_state.email_sent = False
 
 init_state()
 
 # ============================================================
-# Lógica de puntajes y aptitud
+# CÁLCULO DE PUNTAJES Y APTITUD
 # ============================================================
 def compute_scores(answers: Dict[int, int]) -> Dict[str, int]:
+    """
+    answers[i] = 1 si respondió Sí, 0 si respondió No.
+
+    Regla:
+    - Para E y N sumamos "Sí" (1) directo.
+    - Para P y S seguimos tu lógica anterior: se interpreta que
+      responder "No" (0) suma 1 punto de "control/ajuste", y "Sí" suma 0.
+      Eso penaliza conductas impulsivas o poco sinceras.
+    """
     scores = {"E": 0, "N": 0, "P": 0, "S": 0}
     for idx, cat in enumerate(CATEGORIES):
         ans = answers.get(idx)
@@ -304,7 +331,14 @@ def compute_scores(answers: Dict[int, int]) -> Dict[str, int]:
             scores[cat] += ans
     return scores
 
+
 def evaluate_fit_for_job(scores: Dict[str, int], profile: dict):
+    """
+    Devuelve nivel de ajuste al cargo:
+    - APTO: cumple todos los rangos
+    - RIESGO PARCIAL: sólo 1 desajuste
+    - NO APTO DIRECTO: 2 o más desajustes
+    """
     req = profile["requirements"]
     issues = []
     for scale in ["E", "N", "P", "S"]:
@@ -312,9 +346,9 @@ def evaluate_fit_for_job(scores: Dict[str, int], profile: dict):
         mn = req[scale]["min"]
         mx = req[scale]["max"]
         if val < mn:
-            issues.append(f"{scale} bajo (requiere ≥{mn}, obtuvo {val})")
+            issues.append(f"{scale} bajo (mín {mn}, obtuvo {val})")
         elif val > mx:
-            issues.append(f"{scale} alto (requiere ≤{mx}, obtuvo {val})")
+            issues.append(f"{scale} alto (máx {mx}, obtuvo {val})")
 
     if len(issues) == 0:
         level = "APTO"
@@ -325,7 +359,12 @@ def evaluate_fit_for_job(scores: Dict[str, int], profile: dict):
 
     return {"matchLevel": level, "issues": issues}
 
+
 def build_final_report():
+    """
+    Calcula puntajes, evalúa cargo elegido y también otros cargos.
+    Guarda todo en session_state.final_report.
+    """
     scores = compute_scores(st.session_state.answers)
     st.session_state.scores = scores
 
@@ -356,7 +395,121 @@ def build_final_report():
     }
 
 # ============================================================
-# Navegación / callbacks
+# GENERAR PDF (para enviar por correo)
+# ============================================================
+def generate_pdf_bytes(report: dict) -> bytes:
+    """
+    Crea un PDF simple (A4) con los resultados completos.
+    """
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    line_y = height - 40
+    def write(text, size=10, bold=False, gap=14):
+        nonlocal line_y
+        if line_y < 60:
+            c.showPage()
+            line_y = height - 40
+        if bold:
+            c.setFont("Helvetica-Bold", size)
+        else:
+            c.setFont("Helvetica", size)
+        for line in text.split("\n"):
+            c.drawString(40, line_y, line)
+            line_y -= gap
+
+    write("Informe EPQR-A / Selección Operativa", size=14, bold=True, gap=18)
+    write(f"Candidato: {report['candidate_name']}", size=11, bold=False)
+    write(f"Evaluador: {report['evaluator_email']}", size=11, bold=False)
+    write(f"Cargo evaluado: {report['selected_job_title']}", size=11, bold=False)
+    write(" ", gap=10)
+
+    write("Puntajes escalares:", size=12, bold=True, gap=16)
+    scores = report["scores"]
+    write(f"E (Sociabilidad / Asertividad): {scores['E']}")
+    write(f"N (Inestabilidad emocional): {scores['N']}")
+    write(f"P (Impulsividad / Dureza)*: {scores['P']}")
+    write(f"S (Apego a normas / Honestidad percibida)*: {scores['S']}")
+    write("*En P y S una respuesta 'No' suma control/normativa.\n", gap=16)
+
+    fit_sel = report["fit_selected"]
+    write("Evaluación del cargo postulado:", size=12, bold=True, gap=16)
+    write(f"Resultado global: {fit_sel['matchLevel']}", bold=True)
+    if len(fit_sel["issues"]) == 0:
+        write("Observaciones críticas: Ninguna")
+    else:
+        write("Observaciones críticas:", bold=True)
+        for it in fit_sel["issues"]:
+            write(f" - {it}")
+
+    write(" ", gap=10)
+    write("Ajuste potencial en otros cargos productivos:", size=12, bold=True, gap=16)
+    for fit in report["all_fits"]:
+        write(f"- {fit['title']}: {fit['matchLevel']}", bold=True)
+        if fit["issues"]:
+            for it in fit["issues"]:
+                write(f"   · {it}")
+        else:
+            write("   · Sin observaciones críticas")
+        write(f"   Perfil del rol: {fit['desc']}\n")
+
+    write("Notas de uso interno:", size=12, bold=True, gap=16)
+    write(
+        "Este informe es confidencial. No reemplaza entrevista conductual,\n"
+        "pruebas técnicas ni evaluaciones médicas. Uso exclusivo RR.HH."
+    )
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+# ============================================================
+# ENVÍO DE CORREO AUTOMÁTICO CON PDF ADJUNTO
+# ============================================================
+def send_report_via_email(report: dict):
+    """
+    Envía automáticamente el PDF a la casilla indicada.
+    Se usa la casilla fija y la clave app que entregaste.
+    """
+    if st.session_state.email_sent:
+        return  # evita mandarlo más de una vez
+
+    pdf_bytes = generate_pdf_bytes(report)
+
+    msg = EmailMessage()
+    msg["Subject"] = f"Informe EPQR-A - {report['candidate_name']} - {report['selected_job_title']}"
+    msg["From"] = "jo.tajtaj@gmail.com"
+    msg["To"] = "jo.tajtaj@gmail.com"
+
+    body_lines = [
+        f"Candidato: {report['candidate_name']}",
+        f"Cargo evaluado: {report['selected_job_title']}",
+        f"Resultado global: {report['fit_selected']['matchLevel']}",
+        "",
+        "Se adjunta PDF con detalle completo (puntajes, riesgos, ajuste a otros cargos).",
+    ]
+    msg.set_content("\n".join(body_lines))
+
+    # Adjuntar PDF
+    filename = f"EPQRA_{report['candidate_name'].replace(' ','_')}.pdf"
+    msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
+
+    # SMTP Gmail (puerto TLS 587)
+    gmail_user = "jo.tajtaj@gmail.com"
+    gmail_pass = "nlkt kujl ebdg cyts"  # app password entregada
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(gmail_user, gmail_pass)
+        server.send_message(msg)
+
+    st.session_state.email_sent = True
+
+
+# ============================================================
+# CALLBACKS DE FLUJO
 # ============================================================
 def select_job(job_key: str):
     st.session_state.selected_job = job_key
@@ -369,15 +522,27 @@ def start_test_if_ready():
         st.session_state.answers = {i: None for i in range(len(QUESTIONS))}
 
 def answer_question(answer_val: int):
+    """
+    answer_val = 1 (Sí) o 0 (No)
+    Guarda respuesta y avanza automáticamente.
+    Al terminar la última pregunta:
+      - Calcula el informe
+      - Lo guarda en session_state
+      - Envía el correo con el PDF
+      - Cambia a fase "done"
+    """
     idx = st.session_state.q_idx
     st.session_state.answers[idx] = answer_val
 
+    # ¿Quedan más preguntas?
     if idx < len(QUESTIONS) - 1:
         st.session_state.q_idx = idx + 1
         st.session_state._needs_rerun = True
     else:
+        # Última pregunta -> generar informe + enviar + pantalla final
         build_final_report()
-        st.session_state.phase = "result"
+        send_report_via_email(st.session_state.final_report)
+        st.session_state.phase = "done"
         st.session_state._needs_rerun = True
 
 def reset_all():
@@ -385,17 +550,17 @@ def reset_all():
         del st.session_state[key]
     init_state()
 
+
 # ============================================================
-# Render de fases
+# RENDER FASES
 # ============================================================
+
 def render_phase_role():
     st.markdown(
         """
-        <div class="card-header" style="margin-bottom:1rem;">
-            <div style="display:flex;flex-direction:column;gap:.25rem;">
-                <h1 style="font-size:1.25rem;">Test EPQR-A · Selección Operativa</h1>
-                <div class="badge-pill">Evaluación de ajuste conductual</div>
-            </div>
+        <div class="card-header">
+            <h1 style="font-size:1.25rem;">Test EPQR-A · Selección Operativa</h1>
+            <div class="badge-pill">Evaluación conductual interna</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -405,8 +570,9 @@ def render_phase_role():
         """
         <div class="card">
             <p style="margin-top:0;color:#374151;font-size:.9rem;line-height:1.4;">
-            Clasifica al candidato como <b>APTO</b>, <b>RIESGO PARCIAL</b> o
-            <b>NO APTO DIRECTO</b> según el cargo elegido.
+            Este test clasifica al candidato en <b>APTO</b>,
+            <b>RIESGO PARCIAL</b> o <b>NO APTO DIRECTO</b> según el
+            cargo productivo seleccionado. Se envía informe completo por correo interno.
             </p>
         </div>
         """,
@@ -415,7 +581,7 @@ def render_phase_role():
 
     st.markdown(
         """
-        <div class="card" style="margin-top:1rem;">
+        <div class="card">
             <h2 style="font-size:1rem;margin:0 0 .5rem 0;color:#111827;font-weight:600;">
                 Seleccione el cargo a evaluar
             </h2>
@@ -445,17 +611,16 @@ def render_phase_role():
                 use_container_width=True
             )
 
+
 def render_phase_candidate():
     job_key = st.session_state.selected_job
     profile = JOB_PROFILES[job_key]
 
     st.markdown(
         f"""
-        <div class="card-header" style="margin-bottom:1rem;">
-            <div style="display:flex;flex-direction:column;gap:.25rem;">
-                <h2 style="font-size:1.1rem;">Datos del Candidato</h2>
-                <div class="badge-pill">{profile["title"]}</div>
-            </div>
+        <div class="card-header">
+            <h2 style="font-size:1.1rem;">Datos del Candidato</h2>
+            <div class="badge-pill">{profile["title"]}</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -476,7 +641,7 @@ def render_phase_candidate():
         st.markdown(
             """
             <div class="muted" style="margin-top:.5rem;">
-            Estos datos se usan sólo para selección / reubicación interna.
+            Esta información será usada para generar y enviar el informe PDF interno.
             </div>
             """,
             unsafe_allow_html=True
@@ -489,34 +654,30 @@ def render_phase_candidate():
 
     if submitted:
         start_test_if_ready()
-        st.rerun()  # <--- actualizado
+        st.rerun()
+
 
 def render_phase_test():
     idx = st.session_state.q_idx
     total = len(QUESTIONS)
     pct = round(((idx + 1) / total) * 100)
 
+    # HEADER
     st.markdown(
         f"""
         <div class="card-header">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;">
-                <div style="color:#fff;">
-                    <h3 style="font-size:1rem;margin:0 0 .25rem 0;font-weight:600;">
-                        EPQR-A · {JOB_PROFILES[st.session_state.selected_job]["title"]}
-                    </h3>
-                    <div style="font-size:.8rem;opacity:.9;">
-                        Pregunta {idx+1} de {total}
-                    </div>
-                </div>
-                <div class="badge-pill" style="font-size:.7rem;">
-                    {pct}%
-                </div>
+            <h3 style="font-size:1rem;margin:0 0 .25rem 0;font-weight:600;">
+                EPQR-A · {JOB_PROFILES[st.session_state.selected_job]["title"]}
+            </h3>
+            <div style="font-size:.8rem;opacity:.9;">
+                Pregunta {idx+1} de {total} · {pct}%
             </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
+    # BARRA PROGRESO
     st.markdown(
         f"""
         <div class="card" style="padding-bottom:.75rem;">
@@ -536,6 +697,7 @@ def render_phase_test():
         unsafe_allow_html=True
     )
 
+    # PREGUNTA + BOTONES
     st.markdown(
         f"""
         <div class="card" style="margin-top:1rem;">
@@ -546,8 +708,8 @@ def render_phase_test():
         unsafe_allow_html=True
     )
 
-    c_yes, c_no = st.columns(2)
-    with c_yes:
+    col_yes, col_no = st.columns(2)
+    with col_yes:
         st.button(
             "Sí",
             key=f"yes_{idx}",
@@ -556,7 +718,7 @@ def render_phase_test():
             args=(1,),
             use_container_width=True
         )
-    with c_no:
+    with col_no:
         st.button(
             "No",
             key=f"no_{idx}",
@@ -568,15 +730,16 @@ def render_phase_test():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # Mensaje confidencial
     st.markdown(
         """
         <div class="card" style="background:#f9fafb;">
             <div style="display:flex;gap:.5rem;align-items:flex-start;">
                 <div style="font-size:.8rem;color:#4f46e5;font-weight:600;">⚠ Confidencial</div>
                 <div class="muted" style="font-size:.8rem;">
-                    Responda con honestidad. Sus respuestas ayudan a evaluar
-                    estabilidad emocional bajo presión, apego a normas y
-                    ajuste conductual al rol.
+                    Responda honestamente. Esta evaluación mide estabilidad emocional,
+                    ajuste a normas de seguridad, confiabilidad y autocontrol
+                    bajo presión en ambiente productivo.
                 </div>
             </div>
         </div>
@@ -584,223 +747,37 @@ def render_phase_test():
         unsafe_allow_html=True
     )
 
-def render_phase_result():
-    rep = st.session_state.final_report
-    if rep is None:
-        st.write("No hay resultados calculados.")
-        return
 
-    scores = rep["scores"]
-    fit_selected = rep["fit_selected"]
-    all_fits = rep["all_fits"]
-
+def render_phase_done():
+    # Pantalla final verde y nada más.
     st.markdown(
         """
-        <div class="card-header" style="text-align:center;">
-            <div style="margin:0 auto;">
-                <div style="
-                    width:3.5rem;height:3.5rem;
-                    background:#10b981;
-                    border-radius:999px;
-                    display:flex;align-items:center;justify-content:center;
-                    margin:0 auto .75rem auto;
-                    box-shadow:0 20px 24px -8px rgba(16,185,129,.4);
-                ">
-                    <svg xmlns="http://www.w3.org/2000/svg" style="color:white;width:1.5rem;height:1.5rem;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                    </svg>
-                </div>
-                <h2 style="font-size:1.25rem;font-weight:600;line-height:1.2;margin:0;">
-                    Test Completado
-                </h2>
-                <div style="font-size:.8rem;opacity:.9;">
-                    Informe de ajuste conductual y emocional
-                </div>
+        <div class="card-header" style="background:linear-gradient(90deg,#10b981 0%,#059669 100%);box-shadow:inset 0 0 30px rgba(255,255,255,.18);">
+            <div style="
+                width:3.5rem;height:3.5rem;
+                background:#ffffff;
+                border-radius:999px;
+                display:flex;align-items:center;justify-content:center;
+                margin:0 auto .75rem auto;
+                box-shadow:0 20px 24px -8px rgba(255,255,255,.5);
+            ">
+                <svg xmlns="http://www.w3.org/2000/svg" style="color:#10b981;width:1.5rem;height:1.5rem;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+            </div>
+            <div class="final-big">TEST FINALIZADO</div>
+            <div class="final-sub">
+                Sus respuestas han sido registradas correctamente.
+                El informe interno fue generado y enviado para evaluación.
             </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    st.markdown(
-        f"""
-        <div class="card">
-            <h3 style="font-size:1rem;margin:0 0 .75rem 0;font-weight:600;color:#111827;">
-                Datos generales
-            </h3>
-            <div class="kpi-box">
-                <div class="kpi-label">Candidato</div>
-                <div class="kpi-value" style="font-size:1rem;">{rep["candidate_name"]}</div>
-            </div>
-            <div class="kpi-box">
-                <div class="kpi-label">Evaluador</div>
-                <div class="kpi-value" style="font-size:1rem;">{rep["evaluator_email"]}</div>
-            </div>
-            <div class="kpi-box" style="margin-bottom:0;">
-                <div class="kpi-label">Cargo evaluado</div>
-                <div class="kpi-value" style="font-size:1rem;">{rep["selected_job_title"]}</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    matchLevel = fit_selected["matchLevel"]
-    if matchLevel == "APTO":
-        tag_class = "tag-fit tag-fit-ok"
-    elif matchLevel == "RIESGO PARCIAL":
-        tag_class = "tag-fit tag-fit-mid"
-        # amarillo
-    else:
-        tag_class = "tag-fit tag-fit-bad"
-
-    if fit_selected["issues"]:
-        issues_html = "<ul style='margin:.5rem 0 0 1rem;padding:0;font-size:.8rem;color:#4b5563;line-height:1.4;'>"
-        for it in fit_selected["issues"]:
-            issues_html += f"<li>{it}</li>"
-        issues_html += "</ul>"
-    else:
-        issues_html = "<div class='muted' style='margin-top:.5rem;'>Sin observaciones críticas.</div>"
-
-    st.markdown(
-        f"""
-        <div class="card">
-            <h3 style="font-size:1rem;margin:0 0 .75rem 0;font-weight:600;color:#111827;">
-                Ajuste al cargo objetivo
-            </h3>
-            <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;">
-                <div class="{tag_class}">{matchLevel}</div>
-                <div class="muted" style="font-size:.8rem;">
-                    Clasificación vs. rangos conductuales requeridos.
-                </div>
-            </div>
-            {issues_html}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        f"""
-        <div class="card">
-            <h3 style="font-size:1rem;margin:0 0 .75rem 0;font-weight:600;color:#111827;">
-                Perfil conductual medido
-            </h3>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-                <div class="kpi-box">
-                    <div class="kpi-label">E (Sociabilidad / Asertividad)</div>
-                    <div class="kpi-value">{scores["E"]}</div>
-                </div>
-                <div class="kpi-box">
-                    <div class="kpi-label">N (Inestabilidad emocional)</div>
-                    <div class="kpi-value">{scores["N"]}</div>
-                </div>
-                <div class="kpi-box">
-                    <div class="kpi-label">P (Impulsividad / Dureza)</div>
-                    <div class="kpi-value">{scores["P"]}</div>
-                </div>
-                <div class="kpi-box" style="margin-bottom:0;">
-                    <div class="kpi-label">S (Apego a normas / Honestidad percibida)</div>
-                    <div class="kpi-value">{scores["S"]}</div>
-                </div>
-            </div>
-            <div class="muted" style="margin-top:1rem;">
-                • N alto = más tensión emocional; idealmente buscamos N bajo (0-3).<br/>
-                • S alto = mayor apego percibido a normas y veracidad.<br/>
-                • P muy alto = riesgo de impulsividad, pero P excesivamente bajo = docilidad extrema.<br/>
-                • E más alto = comunicación / visibilidad social (útil en supervisión y logística).
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        """
-        <div class="card">
-            <h3 style="font-size:1rem;margin:0 0 .75rem 0;font-weight:600;color:#111827;">
-                Ajuste potencial en otros cargos productivos
-            </h3>
-        """,
-        unsafe_allow_html=True
-    )
-
-    suggested = [
-        f for f in all_fits
-        if f["matchLevel"] in ["APTO", "RIESGO PARCIAL"]
-    ]
-
-    if len(suggested) == 0:
-        st.markdown(
-            """
-            <div class="alt-block">
-                <h4>Sin alternativa clara inmediata</h4>
-                <p>Se sugiere entrevista directa y evaluación en terreno.</p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-    else:
-        for fit in suggested:
-            if fit["matchLevel"] == "APTO":
-                small_tag = "tag-fit tag-fit-ok"
-            elif fit["matchLevel"] == "RIESGO PARCIAL":
-                small_tag = "tag-fit tag-fit-mid"
-            else:
-                small_tag = "tag-fit tag-fit-bad"
-
-            if fit["issues"]:
-                issues_html = "<ul style='margin:.5rem 0 0 1rem;padding:0;font-size:.75rem;color:#4b5563;line-height:1.4;'>"
-                for it in fit["issues"]:
-                    issues_html += f"<li>{it}</li>"
-                issues_html += "</ul>"
-            else:
-                issues_html = ""
-
-            st.markdown(
-                f"""
-                <div class="alt-block">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;">
-                        <div>
-                            <h4 style="margin-bottom:.25rem;">{fit["title"]}</h4>
-                            <p style="margin:0;">{fit["desc"]}</p>
-                        </div>
-                        <div class="{small_tag}" style="font-size:.7rem;">{fit["matchLevel"]}</div>
-                    </div>
-                    {issues_html}
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown(
-        """
-        <div class="card">
-            <h3 style="font-size:1rem;margin:0 0 .75rem 0;font-weight:600;color:#111827;">
-                Próximos pasos sugeridos
-            </h3>
-            <div class="muted">
-                • RR.HH. y jefatura directa revisan el ajuste y observaciones.<br/>
-                • En caso de "RIESGO PARCIAL", profundizar en entrevista conductual.<br/>
-                • Validar referencias laborales previas, asistencia y disciplina.<br/>
-                • Este test NO reemplaza prueba técnica ni examen médico.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.button(
-        "Realizar nuevo test",
-        on_click=reset_all,
-        use_container_width=True,
-        key="btn_reset_all",
-    )
 
 # ============================================================
-# Router principal
+# ROUTER PRINCIPAL
 # ============================================================
 if st.session_state.phase == "role":
     render_phase_role()
@@ -808,13 +785,15 @@ elif st.session_state.phase == "candidate":
     render_phase_candidate()
 elif st.session_state.phase == "test":
     render_phase_test()
-elif st.session_state.phase == "result":
-    render_phase_result()
+elif st.session_state.phase == "done":
+    render_phase_done()
 else:
     st.write("Estado inválido. Reiniciando…")
     reset_all()
 
-# Forzar refresco después de responder pregunta SIN doble click
+# ============================================================
+# AUTO-RERUN DESPUÉS DE CADA RESPUESTA SIN DOBLE CLIC
+# ============================================================
 if st.session_state._needs_rerun:
     st.session_state._needs_rerun = False
-    st.rerun()  # <--- actualizado
+    st.rerun()
