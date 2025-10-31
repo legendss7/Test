@@ -364,6 +364,7 @@ def cargo_fit_text(job_key, E_norm, EE_norm, DC_norm, C_norm, M_norm):
         )
 
 
+
 # ---------- TEXTO / WRAP HELPERS PARA PDF ----------
 def _wrap(c, text, width, font="Helvetica", size=8):
     words = text.split()
@@ -820,7 +821,7 @@ def generate_pdf(candidate_name,
     c.setFont("Helvetica",6)
     c.setFillColor(colors.grey)
     c.drawRightString(W-margin_right, 40,
-       
+        "Uso interno RR.HH. · EPQR-A Adaptado · No clínico"
     )
 
     c.showPage()
