@@ -820,8 +820,8 @@ def generate_pdf_bytes(report: dict) -> bytes:
             leading=2
         )
 
-        c.setFont("Helvetica",6)
-        c.setFillColor(colors.grey)
+        c.setFont("Helvetica",10)
+        c.setFillColor(colors.black)
         c.drawRightString(W-40, 60,
                           "Test Creado por José Ignacio Taj-Taj")
 
@@ -1230,3 +1230,4 @@ elif st.session_state.stage == "test":
 
 else:  # "done"
     view_done()
+
