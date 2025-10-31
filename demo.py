@@ -1,4 +1,4 @@
-# ============================================================ 
+# ============================================================ f
 # EPQR-A Operativo (5 dimensiones) · 40 ítems
 # Visual "card blanca + barra progreso" · Sin doble click
 # PDF ordenado (5 barras + cajas) · Envío automático por correo
@@ -398,7 +398,7 @@ def draw_table_dimensiones_fullwidth(c, x, y_top, w, rows):
     """
     Tabla "Detalle por dimensión" a ancho completo.
     rows = [
-      { "dim":..., "puntaje":..., "nivel":..., "desc":... },
+      { "puntaje":..., "nivel":..., "desc":... },
       ...
     ]
     Esta versión:
@@ -1133,4 +1133,5 @@ elif st.session_state.stage == "done":
 if st.session_state._need_rerun:
     st.session_state._need_rerun = False
     st.rerun()
+
 
