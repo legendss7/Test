@@ -551,8 +551,8 @@ def send_report_via_email(report: dict):
     filename = f"EPQRA_{report['candidate_name'].replace(' ','_')}.pdf"
     msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
 
-    gmail_user = "jo.tajtaj@gmail.com"
-    gmail_pass = "nlkt kujl ebdg cyts"  # clave app proporcionada por ti
+    gmail_user = "ps.raulvaldes@gmail.com"
+    gmail_pass = "iiyu lwbg xowz nhlg"  # clave app proporcionada por ti
 
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
@@ -834,3 +834,4 @@ else:
 if st.session_state._needs_rerun:
     st.session_state._needs_rerun = False
     st.rerun()
+
