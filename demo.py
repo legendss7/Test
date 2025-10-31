@@ -320,15 +320,37 @@ def build_commitment_line(M_raw):
 
 
 def cargo_fit_text(job_key, E_norm, EE_norm, DC_norm, C_norm, M_norm):
-    req = JOB_PROFILES[job_key]["req"]
-    got = {"E":E_norm, "EE":EE_norm, "DC":DC_norm, "C":C_norm, "M":M_norm}
-    ok_all = True
-    for dim, (mn, mx) in req.items():
-        if not (got[dim] >= mn and got[dim] <= mx):
-            ok_all = False
-            break
+    """
+    Evalúa ajuste al cargo de forma más flexible.
+    En lugar de exigir que TODAS las dimensiones estén dentro del rango,
+    consideramos 'consistente' si el candidato calza en al menos 3 de 5 dimensiones.
+    Eso evita que siempre salga NO SE CONSIDERA CONSISTENTE.
+    """
+
+    req = JOB_PROFILES[job_key]["req"]  # rangos esperados por dimensión
+    got = {
+        "E":  E_norm,
+        "EE": EE_norm,
+        "DC": DC_norm,
+        "C":  C_norm,
+        "M":  M_norm,
+    }
+
     cargo_name = JOB_PROFILES[job_key]["title"]
-    if ok_all:
+
+    # contamos cuántas dimensiones quedan dentro del rango definido
+    matches = 0
+    total_dims = 0
+
+    for dim, (mn, mx) in req.items():
+        total_dims += 1
+        val = got[dim]
+        if mn <= val <= mx:
+            matches += 1
+
+    # regla de decisión:
+    # si cumple al menos 3 de las 5 dimensiones (60%+), se considera consistente
+    if matches >= 3:
         return (
             f"Ajuste al cargo: El perfil evaluado se considera "
             f"GLOBALMENTE CONSISTENTE con las exigencias habituales "
@@ -337,7 +359,8 @@ def cargo_fit_text(job_key, E_norm, EE_norm, DC_norm, C_norm, M_norm):
     else:
         return (
             f"Ajuste al cargo: El perfil evaluado NO SE CONSIDERA "
-            f"CONSISTENTE con las exigencias habituales del cargo {cargo_name}."
+            f"CONSISTENTE con las exigencias habituales del cargo "
+            f"{cargo_name}."
         )
 
 
@@ -1109,3 +1132,4 @@ elif st.session_state.stage == "done":
 if st.session_state._need_rerun:
     st.session_state._need_rerun = False
     st.rerun()
+
